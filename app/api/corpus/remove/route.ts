@@ -32,6 +32,17 @@ export async function POST(req: NextRequest) {
     if (idx >= 0) {
       reg[idx].status = 'pending_removal'
       reg[idx].removed_at = Date.now()
+    } else {
+      // The file exists on disk but not in the registry (state resurfaces
+      // such files); register it so the next build stages the removal.
+      reg.push({
+        name,
+        size: 0,
+        mtime: Date.now(),
+        type: name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'txt',
+        status: 'pending_removal',
+        removed_at: Date.now(),
+      })
     }
     await fs.mkdir(path.dirname(uploadsPath), { recursive: true })
     await fs.writeFile(uploadsPath, JSON.stringify(reg, null, 2))

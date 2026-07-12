@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Eye, FolderKanban, X } from 'lucide-react';
+import { Eye, FolderKanban, Loader2, X } from 'lucide-react';
 import GraphVisualizer from '@/components/GraphVisualizer';
 import Inspector from '@/components/Inspector';
 import CorpusPanel from '@/components/CorpusPanel';
@@ -34,6 +34,7 @@ export default function Home() {
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
   const [projectNameRequired, setProjectNameRequired] = useState(false);
   const [currentProjectName, setCurrentProjectName] = useState('');
+  const [buildRunning, setBuildRunning] = useState(false);
   const [ragHighlightedNodeIds] = useState<Set<string>>(new Set());
   
   // Settings modal removed
@@ -114,6 +115,31 @@ export default function Home() {
       console.warn('Hot reload failed:', err);
     }
   }, []);
+
+  // Track the server-owned index job so the UI reflects a build even when
+  // the Builder sheet is closed: the Projects button shows activity, and the
+  // constellation populates progressively as each artifact lands (the job
+  // bumps dataVersion whenever fresh JSON is written to output/).
+  useEffect(() => {
+    let cancelled = false;
+    let lastDataVersion: number | null = null;
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/corpus/index/status', { cache: 'no-store' });
+        if (!res.ok || cancelled) return;
+        const job = await res.json() as { running?: boolean; dataVersion?: number };
+        setBuildRunning(job.running === true);
+        const version = job.dataVersion ?? 0;
+        if (lastDataVersion !== null && version !== lastDataVersion) {
+          reloadGraphData();
+        }
+        lastDataVersion = version;
+      } catch {}
+    };
+    poll();
+    const timer = window.setInterval(poll, 2500);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [reloadGraphData]);
 
   useEffect(() => {
     const handler = () => reloadGraphData();
@@ -450,13 +476,14 @@ export default function Home() {
         <Button
           variant="outline"
           size="sm"
-          className="ml-1 h-9 rounded-none border-white/15 bg-[#05080b]/76 px-3 font-mono text-[9px] uppercase tracking-[0.08em] backdrop-blur-xl hover:bg-white/[0.07]"
+          className={`ml-1 h-9 rounded-none border-white/15 bg-[#05080b]/76 px-3 font-mono text-[9px] uppercase tracking-[0.08em] backdrop-blur-xl hover:bg-white/[0.07] ${buildRunning ? 'border-primary/60' : ''}`}
           onClick={() => setProjectPanelOpen(true)}
-          aria-label="Open projects"
-          title="Projects"
+          aria-label={buildRunning ? 'Open projects — build in progress' : 'Open projects'}
+          title={buildRunning ? 'Projects · build in progress' : 'Projects'}
         >
-          <FolderKanban className="h-3.5 w-3.5" />
+          {buildRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : <FolderKanban className="h-3.5 w-3.5" />}
           Projects
+          {buildRunning && <span className="ml-0.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" aria-hidden />}
         </Button>
 
         {/* Settings removed */}

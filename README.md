@@ -11,7 +11,9 @@ GraphRAG Workbench wraps [Microsoft GraphRAG](https://github.com/microsoft/graph
 - full-screen 3D graph with search and community isolation
 - contextual Inspector for selected entities and their strongest connections
 - local Projects sheet for naming, loading, renaming, deleting, files, statistics, builds, and terminal output
-- cancellable indexing with persisted workflow status
+- cancellable server-owned indexing with persisted workflow status; builds survive closing the Builder
+- live constellation population while a build runs: entities and relationships appear as extraction completes, communities as clustering completes
+- engine-log surfacing with fast failure on fatal provider errors (quota, authentication, missing model)
 - text-backed PDF validation and transactional file removal
 - no account, hosted database, or remote document service
 
@@ -52,9 +54,25 @@ GRAPHRAG_EMBEDDING_API_BASE=https://api.openai.com/v1
 GRAPHRAG_API_KEY=your_key_here
 ```
 
-The LanceDB schema is explicitly configured for the embedding model's 1,536 dimensions. Indexing is serial by default because some OpenAI projects reject parallel Luna requests with a misleading permission error. A small text-backed PDF completed every GraphRAG 3.1 workflow on 12 July 2026 and produced 74 entities, 37 relationships, 2 communities, and 4 text units.
-
 Indexing sends document content to the configured provider and can consume substantial model tokens. Start with a small corpus.
+
+## Performance tuning
+
+Request concurrency and the LanceDB embedding width are resolved from the environment with per-provider defaults (hosted APIs: concurrency 4, 1,536 dimensions · Ollama: concurrency 1, 768 dimensions). Override them in `.env`:
+
+```dotenv
+# Parallel LLM requests across extraction, community reports, and embeddings.
+# GraphRAG's own default is 25; raise this once your API tier tolerates
+# parallel traffic. If concurrent requests start failing with a misleading
+# 401 permission error, lower it again.
+GRAPHRAG_CONCURRENT_REQUESTS=4
+
+# Must match the embedding model's output width
+# (text-embedding-3-small: 1536, nomic-embed-text: 768).
+GRAPHRAG_EMBEDDING_VECTOR_SIZE=1536
+```
+
+During a build the engine log is tailed into the Terminal: provider errors are surfaced as they happen, and a fatal failure (exhausted quota, rejected key, missing model) stops the run immediately with the cause and remedy named instead of retrying every chunk.
 
 ## Ollama
 

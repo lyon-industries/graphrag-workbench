@@ -94,6 +94,10 @@ export class GraphDataLoader {
       const communities = this.parseJsonToCommunities(communitiesData);
       const communityReports = this.parseJsonToCommunityReports(reportsData);
 
+      if (entities.length === 0 && relationships.length === 0) {
+        throw new Error('No graph data available yet');
+      }
+
       // Merge community report titles with communities
       const communityTitleMap = new Map<number, string>();
       communityReports.forEach(report => {
@@ -119,11 +123,17 @@ export class GraphDataLoader {
   }
 
   private async fetchJsonFile(filename: string): Promise<Array<Record<string, unknown>>> {
-    const response = await fetch(`${this.basePath}/${filename}`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ${filename}: ${response.statusText}`);
+    // During a build, artifacts land one workflow at a time (entities and
+    // relationships first, communities and reports later). Treat a missing
+    // file as empty so the constellation can render what exists so far.
+    try {
+      const response = await fetch(`${this.basePath}/${filename}`, { cache: 'no-store' });
+      if (!response.ok) return [];
+      const data = await response.json() as unknown;
+      return Array.isArray(data) ? data as Array<Record<string, unknown>> : [];
+    } catch {
+      return [];
     }
-    return await response.json() as Array<Record<string, unknown>>;
   }
 
   private parseJsonToEntities(data: Array<Record<string, unknown>>): Entity[] {

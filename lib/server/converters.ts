@@ -69,15 +69,19 @@ async function readParquetViaPython(filePath: string): Promise<unknown[]> {
   try { return JSON.parse(stdout) as unknown[] } catch { return [] }
 }
 
-export async function convertGraphParquetToJson(outputDir: string): Promise<{ converted: number }>{
-  const targets = [
-    'entities.parquet',
-    'relationships.parquet',
-    'communities.parquet',
-    'community_reports.parquet',
-    'text_units.parquet',
-  ]
+const GRAPH_PARQUET_TARGETS = [
+  'entities.parquet',
+  'relationships.parquet',
+  'communities.parquet',
+  'community_reports.parquet',
+  'text_units.parquet',
+]
 
+export async function convertGraphParquetToJson(outputDir: string): Promise<{ converted: number }> {
+  return convertParquetSubset(outputDir, GRAPH_PARQUET_TARGETS)
+}
+
+export async function convertParquetSubset(outputDir: string, targets: string[]): Promise<{ converted: number }>{
   await fs.mkdir(outputDir, { recursive: true })
   let converted = 0
   for (const fname of targets) {

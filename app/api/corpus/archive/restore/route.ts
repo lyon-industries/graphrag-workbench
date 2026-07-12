@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { clearIndexJobRecord, stopIndexJob } from '@/lib/server/indexJob'
 
 async function moveDir(src: string, dst: string) {
   try {
@@ -36,6 +37,9 @@ export async function POST(req: Request) {
     const base = path.join(root, 'archives', name)
     // Verify archive exists
     await fs.stat(base)
+    // A running build writes into the working set being swapped out; stop it
+    // so its logs and artifacts cannot bleed into the restored project.
+    await stopIndexJob()
 
     let currentKgName = name
     try {
@@ -98,6 +102,7 @@ export async function POST(req: Request) {
     // 4) Remove temp folder; the original archive name now contains the PREVIOUS working set
     await fs.rm(tmp, { recursive: true, force: true }).catch(() => {})
 
+    clearIndexJobRecord()
     return NextResponse.json({ ok: true })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Failed to restore'

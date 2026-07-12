@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { clearIndexJobRecord, stopIndexJob } from '@/lib/server/indexJob'
 
 async function moveIfExists(src: string, dest: string) {
   try { await fs.stat(src) } catch { return }
@@ -10,6 +11,9 @@ async function moveIfExists(src: string, dest: string) {
 
 export async function POST() {
   try {
+    // A build belongs to exactly one project. Stop it before the working
+    // set moves, or its process keeps appending logs into the new project.
+    await stopIndexJob()
     const root = process.cwd()
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0,19)
     const archName = `kg-${ts}`
@@ -48,6 +52,7 @@ export async function POST() {
     try { await fs.writeFile(path.join(root, 'output', 'kg.json'), JSON.stringify({ name: '' }, null, 2)) } catch {}
     // Reset logs file
     try { await fs.writeFile(path.join(root, 'logs_history.log'), '') } catch {}
+    clearIndexJobRecord()
     return NextResponse.json({ ok: true, name: archName })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Failed to archive'

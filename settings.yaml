@@ -2,11 +2,22 @@
 ### Provider and model values come from .env so the same local application can
 ### use OpenAI or an Ollama-compatible endpoint without changing source files.
 
-# Keep the local default conservative. Some OpenAI projects permit Luna but
-# reject parallel GraphRAG requests with a misleading 401 permission error.
-concurrent_requests: 1
+# Parallel LLM requests across extraction, community reports, and embeddings.
+# Resolved from the environment so the workbench can tune it per provider:
+# Ollama defaults to 1 (a local server serializes anyway), hosted APIs to 4.
+# Raise GRAPHRAG_CONCURRENT_REQUESTS in .env once your API tier allows it —
+# GraphRAG's own default is 25. If parallel requests start failing with a
+# misleading 401 permission error, lower it again; some OpenAI projects
+# permit the model but reject concurrent GraphRAG traffic.
+concurrent_requests: ${GRAPHRAG_CONCURRENT_REQUESTS}
 async_mode: asyncio
 
+# exceptions_to_skip overrides graphrag_llm's default non-retry list, which
+# includes BadRequestError and PermissionDeniedError. OpenAI accounts flagged
+# for "unusual activity" intermittently reject valid requests with a
+# BadRequestError ("insufficient permissions for this operation"); retrying
+# with backoff absorbs those blips. Genuinely broken requests still fail
+# after max_retries and surface in the build terminal.
 completion_models:
   default_completion_model:
     model_provider: ${GRAPHRAG_COMPLETION_PROVIDER}
@@ -20,6 +31,17 @@ completion_models:
       base_delay: 2
       max_delay: 30
       jitter: true
+      exceptions_to_skip:
+        - UnsupportedParamsError
+        - ContextWindowExceededError
+        - ContentPolicyViolationError
+        - ImageFetchError
+        - InvalidRequestError
+        - AuthenticationError
+        - NotFoundError
+        - UnprocessableEntityError
+        - APIResponseValidationError
+        - BudgetExceededError
 
 embedding_models:
   default_embedding_model:
@@ -34,6 +56,17 @@ embedding_models:
       base_delay: 2
       max_delay: 30
       jitter: true
+      exceptions_to_skip:
+        - UnsupportedParamsError
+        - ContextWindowExceededError
+        - ContentPolicyViolationError
+        - ImageFetchError
+        - InvalidRequestError
+        - AuthenticationError
+        - NotFoundError
+        - UnprocessableEntityError
+        - APIResponseValidationError
+        - BudgetExceededError
 
 input:
   type: text
@@ -65,9 +98,11 @@ cache:
 vector_store:
   type: lancedb
   db_uri: output/lancedb
-  # text-embedding-3-small returns 1,536 dimensions. GraphRAG 3.1 otherwise
-  # defaults the Lance schema to 3,072 and folds two embeddings into each row.
-  vector_size: 1536
+  # Must match the embedding model: text-embedding-3-small returns 1,536
+  # dimensions, nomic-embed-text returns 768. GraphRAG 3.1 otherwise defaults
+  # the Lance schema to 3,072 and folds two embeddings into each row. The
+  # workbench resolves this per provider; override in .env if needed.
+  vector_size: ${GRAPHRAG_EMBEDDING_VECTOR_SIZE}
 
 embed_text:
   embedding_model_id: default_embedding_model

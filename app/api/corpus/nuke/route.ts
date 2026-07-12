@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { stopIndexJob } from '@/lib/server/indexJob'
 
 async function moveIfExists(src: string, dest: string) {
   try {
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
     if (confirm !== 'NUKE INDEX') {
       return NextResponse.json({ error: 'Confirmation phrase mismatch' }, { status: 400 })
     }
+    await stopIndexJob()
     const root = process.cwd()
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0,19)
     const arch = path.join(root, 'archives', `nuke-${ts}`)

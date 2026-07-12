@@ -50,3 +50,4 @@ yarn-error.log*
 .vercel/
 input/_pdfs/
 input/
+.claude/
