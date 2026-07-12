@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 
-import { exec as _exec, ExecOptions } from 'node:child_process'
-function execP(command: string, options?: ExecOptions): Promise<{ stdout: string; stderr: string }> {
+import { execFile as _execFile, ExecFileOptions } from 'node:child_process'
+import { resolveGraphRagEnv } from '@/lib/server/graphragEnv'
+function execFileP(file: string, args: string[], options?: ExecFileOptions): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    _exec(command, options ?? {}, (error, stdout, stderr) => {
+    _execFile(file, args, options ?? {}, (error, stdout, stderr) => {
       if (error) return reject(error)
-      resolve({ stdout, stderr })
+      resolve({ stdout: stdout.toString(), stderr: stderr.toString() })
     })
   })
 }
@@ -85,7 +86,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const question: string = (body?.message || '').toString()
-    const model: string = 'gpt-4o-mini-2024-07-18'
     const methodRaw: string = String(body?.method || 'drift').toLowerCase()
     const allowedMethods = ['drift', 'local', 'global', 'basic'] as const
     type Method = typeof allowedMethods[number]
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
     const appDir = process.cwd()
     const visualizerDir = appDir // we're inside graph-rag-visualizer
 
-    console.info('[chat] start', { question, model })
+    console.info('[chat] start', { method })
 
     // Load entities for highlighting
     // Use latest indexed entities directly from output/
@@ -112,13 +112,17 @@ export async function POST(req: NextRequest) {
       const appDir = process.cwd()
       const root = appDir
       try { await fs.mkdir(path.join(root, 'output'), { recursive: true }) } catch {}
-      const cfg = path.join(root, 'settings.yaml')
-      const cmd = `graphrag query --method ${method} -q ${JSON.stringify(question)} --root ${JSON.stringify(root)} --data ${JSON.stringify(path.join(root, 'output'))} --config ${JSON.stringify(cfg)}`
-      const { stdout } = await execP(cmd, { cwd: root, timeout: 180000 })
+      const args = ['query', question, '--method', method, '--root', root, '--data', path.join(root, 'output')]
+      const { env } = resolveGraphRagEnv()
+      const { stdout } = await execFileP('uv', ['run', 'graphrag', ...args], { cwd: root, timeout: 180000, env })
       driftOut = stdout || ''
     } catch (e) {
       console.warn('[chat] drift failed', e)
-      driftOut = ''
+      console.warn('[chat] query failed', e)
+      return NextResponse.json(
+        { error: 'GraphRAG query failed. Review the local server log.', code: 'QUERY_FAILED' },
+        { status: 502 },
+      )
     }
 
     // 2) Derive highlights from GraphRAG output (fallback to question)
@@ -146,7 +150,10 @@ export async function POST(req: NextRequest) {
     let at = driftOut ? driftOut.lastIndexOf(markers[method] || genericMarker) : -1
     if (at < 0) at = driftOut ? driftOut.lastIndexOf(genericMarker) : -1
     const driftAnswer = at >= 0 ? driftOut.slice(at + (markers[method] || genericMarker).length).trim() : (driftOut || '').trim()
-    return NextResponse.json({ answer: driftAnswer || 'No response.', highlights })
+    if (!driftAnswer) {
+      return NextResponse.json({ error: 'GraphRAG returned no answer', code: 'EMPTY_QUERY_RESULT' }, { status: 502 })
+    }
+    return NextResponse.json({ answer: driftAnswer, highlights })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unexpected error'
     return NextResponse.json({ error: msg }, { status: 500 })

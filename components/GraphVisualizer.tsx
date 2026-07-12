@@ -2,15 +2,11 @@
 
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, Sphere, Line } from '@react-three/drei';
+import { OrbitControls, Text, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { Node3D, Link3D, GraphLayout, calculateLinkThickness } from '../lib/forceSimulation';
 import { Community } from '../lib/graphData';
-import { Card, CardContent } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { AlertCircle, RefreshCw, Upload, Database } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 
 import GalaxyBackground from './GalaxyBackground';
 
@@ -28,6 +24,7 @@ interface NodeProps {
   communityMode: 'off' | 'auto' | 'all';
   hasSelectedNode: boolean;
   sharedMaterial: THREE.ShaderMaterial;
+  sharedGeometry: THREE.SphereGeometry;
   onClick: (node: Node3D) => void;
   onPointerOver: (node: Node3D) => void;
   onPointerOut: () => void;
@@ -46,7 +43,7 @@ function useBillboard() {
   return ref;
 }
 
-function Node({ node, isSelected, isHighlighted, isInHierarchy, communityMode, hasSelectedNode, sharedMaterial, onClick, onPointerOver, onPointerOut }: NodeProps) {
+function Node({ node, isSelected, isHighlighted, isInHierarchy, communityMode, hasSelectedNode, sharedMaterial, sharedGeometry, onClick, onPointerOver, onPointerOut }: NodeProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const textRef = useBillboard();
   
@@ -69,7 +66,7 @@ function Node({ node, isSelected, isHighlighted, isInHierarchy, communityMode, h
 
   useFrame((state) => {
     if (meshRef.current) {
-      const scale = isSelected ? 1.5 : isHighlighted ? 1.25 : 1.0;
+      const scale = size * (isSelected ? 1.5 : isHighlighted ? 1.25 : 1.0);
       meshRef.current.scale.setScalar(scale);
     }
     
@@ -87,9 +84,9 @@ function Node({ node, isSelected, isHighlighted, isInHierarchy, communityMode, h
 
   return (
     <group position={[node.x, node.y, node.z]}>
-      <Sphere
+      <mesh
         ref={meshRef}
-        args={[size, 32, 32]}
+        geometry={sharedGeometry}
         onClick={() => onClick(node)}
         onPointerOver={() => onPointerOver(node)}
         onPointerOut={onPointerOut}
@@ -101,13 +98,13 @@ function Node({ node, isSelected, isHighlighted, isInHierarchy, communityMode, h
         ) : (
           <meshStandardMaterial />
         )}
-      </Sphere>
+      </mesh>
       {/* Show labels only for hierarchy nodes in isolator mode, or always in normal mode */}
       {(!hasSelectedNode || communityMode !== 'auto' || isInHierarchy) && (
         <group ref={textRef} position={[0, size + 3, 0]}>
           <Text
             fontSize={Math.max(0.8, size * 0.5)}
-            color={isSelected || isHighlighted ? "white" : "rgba(255,255,255,0.8)"}
+            color={isSelected || isHighlighted ? "white" : "#cccccc"}
             outlineWidth={0.05}
             outlineColor="black"
             anchorX="center"
@@ -388,6 +385,7 @@ interface GraphVisualizerProps {
   searchTerm?: string;
   onNodeHover?: (node: Node3D | null) => void;
   hoveredNode?: Node3D | null;
+  viewportOffset?: number;
 }
 
 export default function GraphVisualizer({ 
@@ -408,15 +406,19 @@ export default function GraphVisualizer({
   searchTerm = '',
   onNodeHover,
   hoveredNode,
+  viewportOffset = 0,
 }: GraphVisualizerProps) {
   // All hooks must be called first, before any conditional returns
   const [highlightedLinks, setHighlightedLinks] = useState<Set<string>>(new Set());
   const [autoOrbit, setAutoOrbit] = useState<boolean>(true);
   const [hasInteracted, setHasInteracted] = useState<boolean>(false);
-  const orbitControlsRef = useRef<{ target: THREE.Vector3; update: () => void } | null>(null);
+  const orbitControlsRef = useRef<React.ElementRef<typeof OrbitControls> | null>(null);
   
   // Shared materials for performance optimization
   const sharedNodeMaterial = useMemo(() => createSharedNodeMaterial(), []) as unknown as THREE.ShaderMaterial;
+  const sharedNodeGeometry = useMemo(() => new THREE.SphereGeometry(1, 32, 32), []);
+
+  useEffect(() => () => sharedNodeGeometry.dispose(), [sharedNodeGeometry]);
   
   // Debounced search term to improve performance
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
@@ -497,6 +499,41 @@ export default function GraphVisualizer({
       return visibleNodeIds.has(link.source.id) && visibleNodeIds.has(link.target.id);
     });
   }, [layout, filteredNodes, minRelationshipWeight]);
+
+  const orderedNodes = useMemo(() => [...filteredNodes].sort((a, b) => {
+    const distanceA = a.x * a.x + a.y * a.y + a.z * a.z;
+    const distanceB = b.x * b.x + b.y * b.y + b.z * b.z;
+    return distanceA - distanceB || b.degree - a.degree;
+  }), [filteredNodes]);
+
+  const [admittedNodeCount, setAdmittedNodeCount] = useState(0);
+
+  useEffect(() => {
+    setAdmittedNodeCount(orderedNodes.length ? 1 : 0);
+    if (!orderedNodes.length) return;
+
+    let frame = 0;
+    const batchSize = Math.max(4, Math.ceil(orderedNodes.length / 36));
+    const admit = () => {
+      setAdmittedNodeCount(count => {
+        const next = Math.min(orderedNodes.length, count + batchSize);
+        if (next < orderedNodes.length) frame = requestAnimationFrame(admit);
+        return next;
+      });
+    };
+    frame = requestAnimationFrame(admit);
+    return () => cancelAnimationFrame(frame);
+  }, [orderedNodes]);
+
+  const admittedNodes = useMemo(
+    () => orderedNodes.slice(0, admittedNodeCount),
+    [admittedNodeCount, orderedNodes]
+  );
+  const admittedNodeIds = useMemo(() => new Set(admittedNodes.map(node => node.id)), [admittedNodes]);
+  const admittedLinks = useMemo(
+    () => filteredLinks.filter(link => admittedNodeIds.has(link.source.id) && admittedNodeIds.has(link.target.id)),
+    [admittedNodeIds, filteredLinks]
+  );
 
   // Compute a key for Canvas remount when filters change (no extra hooks).
   const canvasKeyStr = `types:${Array.from(selectedEntityTypes).sort().join(',')}|lvl:${selectedLevel ?? 'all'}|w:${minRelationshipWeight}|b:${showCommunityBoundaries ? 1 : 0}`
@@ -594,96 +631,6 @@ export default function GraphVisualizer({
     onNodeHover?.(null);
   };
 
-  // Now all conditional returns happen after all hooks are called
-
-  if (error) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-background p-6">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="mt-2">
-                <div className="font-medium mb-2">Failed to Load Graph Data</div>
-                <p className="text-sm mb-4">{error}</p>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={onRetry}
-                  className="w-full"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Retry Loading
-                </Button>
-              </AlertDescription>
-            </Alert>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (loading) {
-    // Enhanced progress calculation based on status
-    const getProgress = () => {
-      if (status.includes('Loading JSON')) return 25;
-      if (status.includes('Processing')) return 60;
-      if (status.includes('Rendering')) return 85;
-      return 15;
-    };
-
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-background p-6">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="space-y-6">
-              <div className="text-center">
-                <Database className="h-12 w-12 mx-auto mb-4 text-primary animate-pulse" />
-                <h3 className="text-lg font-medium mb-2">Loading Knowledge Graph</h3>
-                <p className="text-sm text-muted-foreground mb-4">{status}</p>
-                <Progress 
-                  value={getProgress()} 
-                  className="w-full transition-all duration-500 ease-out"
-                />
-                <div className="text-xs text-muted-foreground mt-2">
-                  {getProgress()}% complete
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!layout) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-background p-6">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="text-center space-y-4">
-              <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center">
-                <Upload className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium">No Knowledge Base Available</h3>
-                <p className="text-sm text-muted-foreground">
-                  Please upload documents and index them to create a knowledge graph visualization.
-                </p>
-              </div>
-              <div className="text-xs text-muted-foreground border-l-2 border-muted pl-3 text-left">
-                <div className="font-medium mb-1">To get started:</div>
-                <div>1. Upload PDFs to the input/ directory</div>
-                <div>2. Run the GraphRAG indexing process</div>
-                <div>3. Return here to visualize your graph</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full h-full overflow-hidden relative">
       <Canvas
@@ -705,6 +652,8 @@ export default function GraphVisualizer({
         onPointerDown={handleUserInteraction}
         onWheel={handleUserInteraction}
       >
+        <CameraViewOffset offset={viewportOffset} />
+
         {/* Auto-orbit controller */}
         <AutoOrbitController
           autoOrbit={autoOrbit}
@@ -745,7 +694,7 @@ export default function GraphVisualizer({
         />
 
         {/* Render nodes */}
-        {filteredNodes.map(node => {
+        {admittedNodes.map(node => {
           // Hide node if search is active and node doesn't match
           const isVisible = !debouncedSearchTerm.trim() || searchMatchingNodes.has(node.id);
           
@@ -759,6 +708,7 @@ export default function GraphVisualizer({
                 communityMode={communityMode}
                 hasSelectedNode={selectedNode !== null}
                 sharedMaterial={sharedNodeMaterial}
+                sharedGeometry={sharedNodeGeometry}
                 onClick={handleNodeClick}
                 onPointerOver={handleNodeHover}
                 onPointerOut={handleNodeHoverOut}
@@ -768,7 +718,7 @@ export default function GraphVisualizer({
         })}
 
         {/* Render links with selective hero energy overlay */}
-        {filteredLinks.map(link => {
+        {admittedLinks.map(link => {
           // Hide link if search is active and neither connected node matches
           const sourceVisible = !debouncedSearchTerm.trim() || searchMatchingNodes.has(link.source.id);
           const targetVisible = !debouncedSearchTerm.trim() || searchMatchingNodes.has(link.target.id);
@@ -800,7 +750,7 @@ export default function GraphVisualizer({
         })}
 
         {/* Render community boundaries */}
-        {showCommunityBoundaries && (visibleCommunities || layout.communities).map(community => {
+        {showCommunityBoundaries && admittedNodeCount >= orderedNodes.length && (visibleCommunities || layout?.communities || []).map(community => {
           // Check if community has any visible nodes when search is active
           const hasVisibleNodes = debouncedSearchTerm.trim() ? 
             community.entity_ids.some((entityId: string) => searchMatchingNodes.has(entityId)) :
@@ -822,6 +772,19 @@ export default function GraphVisualizer({
         {/* Postprocessing: selective bloom + vignette overlay */}
         <SelectiveBloomEffects settings={postFx} />
       </Canvas>
+
+      {(loading || (layout && admittedNodeCount < orderedNodes.length)) && (
+        <div className="pointer-events-none absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-2 border border-white/12 bg-[#05080b]/68 px-3 py-2 font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground backdrop-blur-xl">
+          <Loader2 className="h-3 w-3 animate-spin text-primary" />
+          {layout ? `Building graph · ${admittedNodeCount}/${orderedNodes.length}` : status}
+        </div>
+      )}
+
+      {error && (
+        <button onClick={onRetry} className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-2 border border-destructive/50 bg-[#05080b]/80 px-3 py-2 text-[10px] text-foreground backdrop-blur-xl">
+          <AlertCircle className="h-3.5 w-3.5 text-destructive" /> {error} · Retry
+        </button>
+      )}
 
     </div>
   );
@@ -877,7 +840,7 @@ function AutoOrbitController({
   hasInteracted: boolean;
   graphCenter: [number, number, number];
   graphSize: number;
-  orbitControlsRef: React.RefObject<{ target: THREE.Vector3; update: () => void } | null>;
+  orbitControlsRef: React.RefObject<React.ElementRef<typeof OrbitControls> | null>;
 }) {
   useFrame((state) => {
     if (autoOrbit && !hasInteracted && orbitControlsRef.current) {
@@ -900,6 +863,41 @@ function AutoOrbitController({
       orbitControlsRef.current.update();
     }
   });
+
+  return null;
+}
+
+function CameraViewOffset({ offset }: { offset: number }) {
+  const { camera, size } = useThree();
+  const currentOffset = useRef(offset);
+  const targetOffset = useRef(offset);
+
+  useEffect(() => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return;
+    targetOffset.current = offset;
+  }, [camera, offset]);
+
+  useFrame((_, delta) => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return;
+    const next = THREE.MathUtils.damp(currentOffset.current, targetOffset.current, 20, delta);
+    if (Math.abs(next - currentOffset.current) < 0.01 && Math.abs(next - targetOffset.current) < 0.5) return;
+    currentOffset.current = Math.abs(next) < 0.5 ? 0 : next;
+
+    if (currentOffset.current > 0) {
+      camera.setViewOffset(size.width + currentOffset.current, size.height, 0, 0, size.width, size.height);
+    } else {
+      camera.clearViewOffset();
+      camera.aspect = size.width / size.height;
+    }
+    camera.updateProjectionMatrix();
+  });
+
+  useEffect(() => () => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return;
+    camera.clearViewOffset();
+    camera.aspect = size.width / size.height;
+    camera.updateProjectionMatrix();
+  }, [camera, size.height, size.width]);
 
   return null;
 }

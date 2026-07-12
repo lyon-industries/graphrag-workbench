@@ -16,20 +16,20 @@ export async function POST() {
     const arch = path.join(root, 'archives', archName)
     await fs.mkdir(arch, { recursive: true })
 
+    let name = archName
+    try {
+      const raw = await fs.readFile(path.join(root, 'output', 'kg.json'), 'utf-8')
+      const meta = JSON.parse(raw) as { name?: string }
+      if (meta?.name) name = String(meta.name)
+    } catch {}
+
     await moveIfExists(path.join(root, 'output'), path.join(arch, 'output'))
     await moveIfExists(path.join(root, 'cache'), path.join(arch, 'cache'))
     await moveIfExists(path.join(root, 'logs'), path.join(arch, 'logs'))
     await moveIfExists(path.join(root, 'input'), path.join(arch, 'input'))
 
     // Persist KG name into archive root as kg.json
-    const currentKgMetaPath = path.join(root, 'output', 'kg.json')
     const archKgMetaPath = path.join(arch, 'kg.json')
-    let name = archName
-    try {
-      const raw = await fs.readFile(currentKgMetaPath, 'utf-8')
-      const meta = JSON.parse(raw) as { name?: string }
-      if (meta?.name) name = String(meta.name)
-    } catch {}
     try {
       await fs.writeFile(archKgMetaPath, JSON.stringify({ name, archived_at: Date.now() }, null, 2))
     } catch {}

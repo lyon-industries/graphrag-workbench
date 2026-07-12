@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import fsSync from 'node:fs'
+import { resolveGraphRagEnv } from '@/lib/server/graphragEnv'
 
 type Entity = { id: string; title: string; description?: string; type?: string }
 type Relationship = { source: string; target: string; description?: string; weight?: number }
@@ -76,26 +76,9 @@ async function buildContext(ids: string[], baseDir: string): Promise<string> {
   }
 }
 
-function loadRootEnvIfMissing() {
-  if (process.env.OPENAI_API_KEY || process.env.GRAPHRAG_API_KEY) return
-  const p = path.join(process.cwd(), '.env')
-  try {
-    const raw = fsSync.readFileSync(p, 'utf-8')
-    for (const line of raw.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
-      if (!m) continue
-      let v = m[2]
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1)
-      if (!(m[1] in process.env)) process.env[m[1]] = v
-    }
-  } catch {}
-}
-
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   const question: string = (body?.message || '').toString()
-  const model: string = 'gpt-4o-mini-2024-07-18'
-  const apiKeyOverride: string | undefined = body?.apiKey ? String(body.apiKey) : undefined
   const useLocalSearch: boolean = Boolean(body?.useLocalSearch)
   const methodRaw: string = String(body?.method || 'drift').toLowerCase()
   const allowedMethods = ['drift', 'local', 'global', 'basic'] as const
@@ -109,12 +92,13 @@ export async function POST(req: NextRequest) {
   const visualizerDir = appDir
   const repoRoot = appDir
 
-  console.info('[chat/stream] start', { question, model, method })
+  console.info('[chat/stream] start', { method })
 
   let driftOutput = ''
   let driftErrorText = ''
   let highlights: string[] = []
   let context = ''
+  let activeChild: ReturnType<typeof spawn> | undefined
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -134,19 +118,12 @@ export async function POST(req: NextRequest) {
 
       // Step 1: Run GraphRAG drift
       stepStart('query')
-      const cfg = path.join(repoRoot, 'settings.yaml')
       // Ensure data directory exists to satisfy graphrag CLI path validation
       try { await fs.mkdir(path.join(repoRoot, 'output'), { recursive: true }) } catch {}
-      const cmd = `graphrag query --method ${method} -q ${JSON.stringify(question)} --root ${JSON.stringify(repoRoot)} --data ${JSON.stringify(path.join(repoRoot, 'output'))} --config ${JSON.stringify(cfg)}`
-      console.info('[chat/stream] running:', cmd)
-      const env: NodeJS.ProcessEnv = { ...process.env }
-      if (apiKeyOverride) {
-        env.OPENAI_API_KEY = apiKeyOverride
-        env.OPENAI_API_KEY = apiKeyOverride
-      } else {
-        loadRootEnvIfMissing()
-      }
-      const child = spawn('bash', ['-lc', cmd], { cwd: repoRoot, env })
+      const args = ['query', question, '--method', method, '--root', repoRoot, '--data', path.join(repoRoot, 'output')]
+      const { env } = resolveGraphRagEnv()
+      const child = spawn('uv', ['run', 'graphrag', ...args], { cwd: repoRoot, env })
+      activeChild = child
 
       let answerStreamStarted = false
       const markers: Record<string, string> = {
@@ -186,10 +163,22 @@ export async function POST(req: NextRequest) {
       })
       child.on('error', (err) => {
         console.error('[chat/stream] drift error:', err)
-        send('error', { message: `Drift failed: ${String(err)}` })
+        send('error', { message: 'GraphRAG query process could not start.' })
       })
       child.on('close', async (code) => {
+        activeChild = undefined
         stepEnd('query', { code, method })
+
+        if (code !== 0) {
+          send('fault', {
+            code: 'QUERY_FAILED',
+            message: 'GraphRAG query failed. Review the local server log.',
+            recover: 'Confirm the index and engine configuration, then retry.',
+          })
+          send('done', { ok: false, code })
+          controller.close()
+          return
+        }
 
         // Detect embedding mismatch
         const embeddingMismatch = /embeddings are not compatible/i.test(driftErrorText)
@@ -221,8 +210,7 @@ export async function POST(req: NextRequest) {
         if (embeddingMismatch) {
           send('warning', { message: 'Embedding mismatch between query and KB. Attempting fallback retrieval…' })
           // Fallback A: if we have an OpenAI key, rerun drift with public settings to build context
-          const keyForFallback = apiKeyOverride || process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY
-          if (!keyForFallback) {
+          if (!process.env.GRAPHRAG_API_KEY) {
             // Fallback B: JSON-only retrieval using simple title match
             stepStart('fallback-json')
             try {
@@ -249,8 +237,8 @@ export async function POST(req: NextRequest) {
         if (useLocalSearch) {
           stepStart('local-search')
           try {
-            const localCmd = `graphrag query --method local -q ${JSON.stringify(question)} --root ${JSON.stringify(repoRoot)} --data ${JSON.stringify(path.join(repoRoot, 'output'))} --config ${JSON.stringify(cfg)} --response-type ${JSON.stringify('Multiple Paragraphs')}`
-            const localChild = spawn('bash', ['-lc', localCmd], { cwd: repoRoot, env })
+            const localArgs = ['query', question, '--method', 'local', '--root', repoRoot, '--data', path.join(repoRoot, 'output'), '--response-type', 'Multiple Paragraphs']
+            const localChild = spawn('uv', ['run', 'graphrag', ...localArgs], { cwd: repoRoot, env })
             let localOut = ''
             localChild.stdout.on('data', (chunk: Buffer) => {
               localOut += sanitizeLogLine(chunk.toString())
@@ -286,7 +274,17 @@ export async function POST(req: NextRequest) {
           let at = driftOutput ? driftOutput.lastIndexOf(m) : -1
           if (at < 0) at = driftOutput ? driftOutput.lastIndexOf(genericMarker) : -1
           const answerText = at >= 0 ? driftOutput.slice(at + m.length).trim() : (driftOutput || '').trim()
-          send('answer', { text: answerText || 'No response.', highlights })
+          if (!answerText) {
+            send('fault', {
+              code: 'EMPTY_QUERY_RESULT',
+              message: 'GraphRAG completed without an answer.',
+              recover: 'Inspect the retrieved context or try a different query method.',
+            })
+            send('done', { ok: false, code: 'EMPTY_QUERY_RESULT' })
+            controller.close()
+            return
+          }
+          send('answer', { text: answerText, highlights })
           stepEnd('emit-answer', { ok: true, source: method })
         } catch (e) {
           stepEnd('emit-answer', { ok: false, source: method })
@@ -299,6 +297,7 @@ export async function POST(req: NextRequest) {
     },
     cancel() {
       console.info('[chat/stream] client disconnected')
+      activeChild?.kill('SIGTERM')
     },
   })
 

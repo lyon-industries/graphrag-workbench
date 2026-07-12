@@ -37,6 +37,13 @@ export async function POST(req: Request) {
     // Verify archive exists
     await fs.stat(base)
 
+    let currentKgName = name
+    try {
+      const raw = await fs.readFile(path.join(root, 'output', 'kg.json'), 'utf-8')
+      const meta = JSON.parse(raw) as { name?: string }
+      if (meta?.name) currentKgName = String(meta.name)
+    } catch {}
+
     // 1) Swap: first move the target archive aside to a temp location
     const tmp = path.join(root, 'archives', `${name}.__swap__${Date.now()}`)
     await moveDir(base, tmp)
@@ -53,14 +60,7 @@ export async function POST(req: Request) {
     }
     // Persist current KG name into the new archive's kg.json
     try {
-      const currentKgMetaPath = path.join(root, 'output', 'kg.json')
-      let kgName = name
-      try {
-        const raw = await fs.readFile(currentKgMetaPath, 'utf-8')
-        const meta = JSON.parse(raw) as { name?: string }
-        if (meta?.name) kgName = String(meta.name)
-      } catch {}
-      await fs.writeFile(path.join(base, 'kg.json'), JSON.stringify({ name: kgName, archived_at: Date.now() }, null, 2))
+      await fs.writeFile(path.join(base, 'kg.json'), JSON.stringify({ name: currentKgName, archived_at: Date.now() }, null, 2))
     } catch {}
     // Move aggregated root log history into the new archive
     try {

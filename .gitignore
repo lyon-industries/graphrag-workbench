@@ -21,6 +21,7 @@ node_modules/
 out/
 dist/
 build/
+*.tsbuildinfo
 
 # Env files (keep examples tracked)
 .env
@@ -48,3 +49,4 @@ yarn-error.log*
 .pnpm-debug.log*
 .vercel/
 input/_pdfs/
+input/

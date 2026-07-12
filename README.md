@@ -1,171 +1,118 @@
 # GraphRAG Workbench
 
-An open workbench for turning a PDF corpus into an inspectable knowledge graph.
+A local workbench for turning documents into an inspectable 3D knowledge graph.
 
-GraphRAG Workbench wraps [Microsoft GraphRAG](https://github.com/microsoft/graphrag) with a local document pipeline, a 3D graph viewer, corpus controls, and four query modes. It is built to answer a practical question: once GraphRAG has extracted entities, relationships, and communities, can a person inspect the result well enough to find errors, navigate structure, and ask better questions?
+GraphRAG Workbench wraps [Microsoft GraphRAG](https://github.com/microsoft/graphrag) with local document preparation, indexing controls, a live terminal, project management, and the original Three.js graph. It is a dedicated open-source desktop-style web app: clone it, configure a model provider, and run it on your machine.
 
-[Open the interface preview](https://graphrag-workbench-web.vercel.app) · [Report an issue](https://github.com/lyon-industries/graphrag-workbench/issues)
+## Version 2.0
 
-![GraphRAG Workbench interface](https://github.com/user-attachments/assets/1f588a45-07ca-4953-92ed-fc888fe28cff)
+- Microsoft GraphRAG 3.1.0, pinned with `uv`
+- OpenAI Luna and local Ollama provider configuration
+- full-screen 3D graph with search and community isolation
+- contextual Inspector for selected entities and their strongest connections
+- local Projects sheet for naming, loading, renaming, deleting, files, statistics, builds, and terminal output
+- cancellable indexing with persisted workflow status
+- text-backed PDF validation and transactional file removal
+- no account, hosted database, or remote document service
 
-## What it does
+Chat is intentionally absent from 2.0 while its next interaction model is designed.
 
-The workbench connects five operations in one interface:
+## Requirements
 
-1. Accept PDF files and extract their text locally.
-2. Run the GraphRAG indexing pipeline and stream its logs to the browser.
-3. Convert GraphRAG parquet output into data the viewer can render.
-4. Explore entities, weighted relationships, and community hierarchy in 3D.
-5. Query the indexed corpus with GraphRAG's DRIFT, local, global, or basic search.
-
-The graph can be searched, filtered by entity or community, isolated by community level, and archived as a local working state. Node size and link width expose centrality and relationship weight; the inspector shows the underlying entity and relationship records.
-
-## Operating boundary
-
-This is an experimental, local-first system—not a hosted document service.
-
-- Indexing calls the `graphrag` CLI from the Next.js server process.
-- Documents, generated indexes, logs, and archives are written to the local filesystem.
-- The included configuration uses OpenAI models and can incur API cost. Start with a small corpus and review `settings.yaml` before indexing.
-- Graph extraction is probabilistic. A visible relationship is model output to inspect, not a verified fact.
-- The hosted Vercel URL proves that the interface is available. Run the repository locally for PDF ingestion, persistent storage, and indexing.
-
-Do not upload confidential, customer, employer, or regulated material without first reviewing the model provider, storage path, retention policy, and your authority to process it.
-
-## Run it locally
-
-### Prerequisites
-
-- Node.js 20 or later
+- Node.js 20.9 or later
 - pnpm
-- Python 3.10 or later
-- Microsoft GraphRAG available as the `graphrag` command
-- An OpenAI API key
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/)
+- an OpenAI API key or a running [Ollama](https://ollama.com/) installation
 
-### Installation
+## Install
 
 ```bash
 git clone https://github.com/lyon-industries/graphrag-workbench.git
 cd graphrag-workbench
-
 pnpm install
-python -m pip install graphrag
+uv sync --frozen
 cp .env.example .env
-```
-
-Set your key in `.env`:
-
-```dotenv
-OPENAI_API_KEY=your_key_here
-```
-
-Review `settings.yaml` before the first run. The checked-in configuration currently uses `gpt-4o-mini-2024-07-18` for chat and extraction, `text-embedding-3-small` for embeddings, 1,200-token chunks, and local file storage.
-
-Start the application:
-
-```bash
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Development and production commands bind to the local interface.
 
-## Build a graph
+## OpenAI Luna
 
-1. Open the **Corpus** panel.
-2. Add one or more PDFs to the Dataset card.
-3. Select **Run Index** and watch the indexing log.
-4. Inspect the resulting entities, relationships, and communities in the graph.
-5. Open **Chat** and choose DRIFT, local, global, or basic search for the question at hand.
+Add your key to `.env`; do not commit it.
 
-Useful controls:
-
-- `Cmd/Ctrl + K` focuses graph search.
-- Drag rotates the graph, scroll zooms, and right-drag pans.
-- **Community Isolator** narrows the view to a selected hierarchy.
-- **Archives** preserves and restores local corpus/index states.
-
-## How the pipeline fits together
-
-```text
-PDF upload
-  -> local text extraction
-  -> GraphRAG indexing
-  -> parquet output
-  -> JSON conversion
-  -> 3D graph and inspector
-  -> GraphRAG query
+```dotenv
+GRAPHRAG_COMPLETION_PROVIDER=openai
+GRAPHRAG_COMPLETION_MODEL=gpt-5.6-luna
+GRAPHRAG_COMPLETION_API_BASE=https://api.openai.com/v1
+GRAPHRAG_EMBEDDING_PROVIDER=openai
+GRAPHRAG_EMBEDDING_MODEL=text-embedding-3-small
+GRAPHRAG_EMBEDDING_API_BASE=https://api.openai.com/v1
+GRAPHRAG_API_KEY=your_key_here
 ```
 
-The application does not replace GraphRAG. It provides an operator interface around the upstream index and query commands.
+The LanceDB schema is explicitly configured for the embedding model's 1,536 dimensions. Indexing is serial by default because some OpenAI projects reject parallel Luna requests with a misleading permission error. A small text-backed PDF completed every GraphRAG 3.1 workflow on 12 July 2026 and produced 74 entities, 37 relationships, 2 communities, and 4 text units.
+
+Indexing sends document content to the configured provider and can consume substantial model tokens. Start with a small corpus.
+
+## Ollama
+
+```bash
+ollama pull gemma4:latest
+ollama pull nomic-embed-text:latest
+```
+
+Replace the OpenAI values in `.env` with the commented Ollama configuration in `.env.example`. Local completion models must produce GraphRAG's structured extraction format; endpoint availability alone does not guarantee a usable graph.
+
+## Build and inspect a graph
+
+1. Open **Projects**.
+2. Give the project a human-readable name.
+3. Add one or more text-backed PDFs.
+4. Select **Build graph** and follow each workflow in the Terminal.
+5. Close Projects to explore the graph.
+6. Select a node to open its Inspector; select a connected entity to traverse the graph.
+
+`Cmd/Ctrl + K` focuses entity search. Drag rotates, scroll zooms, and right-drag pans. **Isolate community** focuses the selected hierarchy.
+
+Image-only PDFs are rejected with an explicit terminal message. OCR is not included in 2.0. Removing a source schedules it for deletion; the file and its derived text are deleted only after the replacement graph builds successfully.
+
+## Local data flow
+
+```text
+text-backed PDF
+  -> local text extraction
+  -> Microsoft GraphRAG 3.1
+  -> parquet + LanceDB
+  -> local JSON conversion
+  -> Three.js graph + Inspector
+```
+
+Runtime documents, output, caches, logs, and project archives are excluded from Git. Configured model providers still receive the content required for their calls.
+
+## Quality gates
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm audit --prod
+uv lock --check
+```
+
+## Stack
 
 | Area | Implementation |
 | --- | --- |
-| Web application | Next.js 15, React 19, TypeScript |
-| Graph renderer | React Three Fiber, Three.js, `d3-force-3d` |
-| Index and query engine | Microsoft GraphRAG CLI |
-| PDF extraction | `pdf-parse` |
-| Local persistence | Filesystem, parquet, JSON, and LanceDB output |
-| Progress transport | Server-sent events from Next.js route handlers |
+| Application | Next.js 16.2, React 19.2, TypeScript |
+| Graph | React Three Fiber, Three.js, `d3-force-3d` |
+| Engine | Microsoft GraphRAG 3.1.0, Python 3.12, `uv` |
+| Storage | local filesystem, parquet, JSON, LanceDB |
+| Progress | server-sent events and persisted local logs |
 
-Key paths:
+## License
 
-```text
-app/                 Next.js interface and server routes
-components/          Graph, corpus, chat, controls, and inspector
-lib/                 Graph transforms, force layout, and PDF/parquet conversion
-prompts/             GraphRAG extraction, report, and query prompts
-settings.yaml        Model, storage, extraction, clustering, and query settings
-input/               Local corpus created at runtime
-output/              Local GraphRAG and viewer data created at runtime
-archives/            Saved local working states created at runtime
-```
+[MIT](LICENSE). Microsoft GraphRAG provides extraction, community analysis, and indexing. GraphRAG Workbench provides the local operator interface.
 
-## Development checks
-
-```bash
-pnpm lint
-pnpm build
-```
-
-## Failure modes
-
-### Indexing does not start
-
-- Confirm `graphrag` resolves in the same shell that starts Next.js: `graphrag --help`.
-- Confirm `.env` contains `OPENAI_API_KEY`.
-- Review the streamed indexing log for model, rate-limit, prompt, or configuration errors.
-
-### The graph stays empty after indexing
-
-- Check that GraphRAG produced files under `output/`.
-- Look for parquet-to-JSON conversion errors at the end of the indexing log.
-- Start with a small, text-heavy PDF to separate extraction problems from corpus complexity.
-
-### Queries fail or return weak evidence
-
-- Confirm the index and query use compatible embedding settings.
-- Compare query modes; they retrieve and aggregate context differently.
-- Inspect the source graph before treating an answer as grounded. Missing or incorrect entities propagate into query results.
-
-### Rendering becomes slow
-
-- Isolate a community or filter entity types before increasing visual effects.
-- Reduce the visible graph rather than assuming the force layout will remain readable at every corpus size.
-- WebGL 2 support is required.
-
-## Contributing
-
-Open an issue before a major change so the intended test and operating boundary are clear. For a focused fix:
-
-1. Fork the repository.
-2. Create a short-lived branch.
-3. Run `pnpm lint` and `pnpm build`.
-4. Open a pull request that states what changed, how it was tested, and any unresolved failure mode.
-
-## License and upstream work
-
-The repository is available under the [MIT License](LICENSE).
-
-GraphRAG Workbench depends on [Microsoft GraphRAG](https://github.com/microsoft/graphrag) for graph extraction, community analysis, and query workflows. Its interface also uses [React Three Fiber](https://github.com/pmndrs/react-three-fiber), [Three.js](https://threejs.org/), and [shadcn/ui](https://ui.shadcn.com/).
-
-Built by [Lyon Industries](https://lyon-industries.no), an independent research, engineering, and design house in Stavanger.
+Built by [Lyon Industries](https://lyon-industries.no) in Stavanger, Norway.

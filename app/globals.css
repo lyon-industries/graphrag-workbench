@@ -45,37 +45,37 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: #05080b;
+  --foreground: #eaeef0;
+  --card: #0c0f11;
+  --card-foreground: #eaeef0;
+  --popover: #0c0f11;
+  --popover-foreground: #eaeef0;
+  --primary: #ea5c22;
+  --primary-foreground: #05080b;
+  --secondary: #202426;
+  --secondary-foreground: #eaeef0;
+  --muted: #202426;
+  --muted-foreground: #9da3a6;
+  --accent: #2a302e;
+  --accent-foreground: #eaeef0;
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: #ea5c22;
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar: #0c0f11;
+  --sidebar-foreground: #eaeef0;
+  --sidebar-primary: #ea5c22;
+  --sidebar-primary-foreground: #05080b;
+  --sidebar-accent: #2a302e;
+  --sidebar-accent-foreground: #eaeef0;
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: #ea5c22;
 }
 
 
@@ -96,4 +96,26 @@
 .no-scrollbar::-webkit-scrollbar { /* Chrome/Safari */
   width: 0;
   height: 0;
+}
+
+@keyframes inspector-ramp-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-20px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.graphrag-inspector-enter {
+  animation: inspector-ramp-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graphrag-inspector-enter {
+    animation: none;
+  }
 }

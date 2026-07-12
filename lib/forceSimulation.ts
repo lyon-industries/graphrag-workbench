@@ -103,6 +103,13 @@ export class ForceSimulation3D {
 
   private preprocessData(graphData: GraphData): void {
     this.communities = graphData.communities;
+    let minAbstraction = Infinity;
+    let maxAbstraction = -Infinity;
+    graphData.entities.forEach(entity => {
+      const score = entity.degree + entity.frequency * 0.5;
+      minAbstraction = Math.min(minAbstraction, score);
+      maxAbstraction = Math.max(maxAbstraction, score);
+    });
     
     // Create entity lookup for community assignment
     const entityToCommunity = new Map<string, Community>();
@@ -119,9 +126,6 @@ export class ForceSimulation3D {
       
       // Calculate abstraction level - higher degree + frequency = more central/abstract
       const abstractionScore = entity.degree + (entity.frequency * 0.5);
-      const maxAbstraction = Math.max(...graphData.entities.map(e => e.degree + (e.frequency * 0.5)));
-      const minAbstraction = Math.min(...graphData.entities.map(e => e.degree + (e.frequency * 0.5)));
-      
       // Normalize abstraction to 0-1 scale (1 = most abstract, 0 = least abstract)
       const normalizedAbstraction = maxAbstraction > minAbstraction ? 
         (abstractionScore - minAbstraction) / (maxAbstraction - minAbstraction) : 0.5;
@@ -255,10 +259,16 @@ export class ForceSimulation3D {
     // In spherical knowledge universe, communities are distributed on spherical shells
     // Calculate community centers based on average abstraction level of member nodes
     this.communityCenters.clear();
+    const nodesByCommunity = new Map<string, Node3D[]>();
+    this.nodes.forEach(node => {
+      if (!node.community) return;
+      const group = nodesByCommunity.get(node.community.id);
+      if (group) group.push(node);
+      else nodesByCommunity.set(node.community.id, [node]);
+    });
     
     this.communities.forEach((community, communityIndex) => {
-      // Find all nodes in this community
-      const communityNodes = this.nodes.filter(node => node.community?.id === community.id);
+      const communityNodes = nodesByCommunity.get(community.id) || [];
       
       if (communityNodes.length > 0) {
         // Calculate average abstraction level for community positioning
@@ -514,8 +524,8 @@ export class ForceSimulation3D {
       
       // Find parent communities
       if (community.parent !== null && community.parent !== undefined) {
-        const parentId = typeof community.parent === 'string' ? parseInt(community.parent) : community.parent;
-        const parentCommunity = this.communities.find(c => c.human_readable_id === parentId);
+        const parentId = String(community.parent);
+        const parentCommunity = this.communities.find(c => String(c.human_readable_id) === parentId);
         if (parentCommunity) {
           parentCommunities.push(parentCommunity);
         }
@@ -524,8 +534,8 @@ export class ForceSimulation3D {
       // Find child communities
       this.communities.forEach(otherCommunity => {
         if (otherCommunity.parent !== null && otherCommunity.parent !== undefined) {
-          const parentId = typeof otherCommunity.parent === 'string' ? parseInt(otherCommunity.parent) : otherCommunity.parent;
-          if (parentId === community.human_readable_id) {
+          const parentId = String(otherCommunity.parent);
+          if (parentId === String(community.human_readable_id)) {
             childCommunities.push(otherCommunity);
           }
         }
@@ -534,8 +544,8 @@ export class ForceSimulation3D {
       // Also check the children array if available
       if (community.children && Array.isArray(community.children)) {
         community.children.forEach((childHumanId: string) => {
-          const childId = parseInt(childHumanId);
-          const childCommunity = this.communities.find(c => c.human_readable_id === childId);
+          const childId = String(childHumanId);
+          const childCommunity = this.communities.find(c => String(c.human_readable_id) === childId);
           if (childCommunity && !childCommunities.some(c => c.id === childCommunity.id)) {
             childCommunities.push(childCommunity);
           }

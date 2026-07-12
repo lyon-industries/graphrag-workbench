@@ -70,30 +70,33 @@ export async function GET() {
     const meta = JSON.parse(raw) as { name?: string }
     if (meta?.name) kgName = String(meta.name)
   } catch {}
-  // If stats missing or all zeros, count directly from JSON files
+  // The generated JSON files are the UI's authoritative dataset. Count them
+  // directly so stale GraphRAG stats cannot report a partially empty graph.
   try {
     const dataDir = path.join(root, 'output')
     const safeCount = async (name: string) => {
       try { const raw = await fs.readFile(path.join(dataDir, name), 'utf-8'); const arr = JSON.parse(raw); return Array.isArray(arr) ? arr.length : 0 } catch { return 0 }
     }
-    const zeroOrMissing = !outputStats || ((outputStats.entities ?? 0) + (outputStats.relationships ?? 0) + (outputStats.communities ?? 0) + (outputStats.text_units ?? 0) === 0)
-    if (zeroOrMissing) {
-      const entities = await safeCount('entities.json')
-      const relationships = await safeCount('relationships.json')
-      const communities = await safeCount('communities.json')
-      const text_units = await safeCount('text_units.json')
-      const total = entities + relationships + communities + text_units
-      if (total > 0) {
-        let last_index_time: string | undefined
+    const entities = await safeCount('entities.json')
+    const relationships = await safeCount('relationships.json')
+    const communities = await safeCount('communities.json')
+    const text_units = await safeCount('text_units.json')
+    const total = entities + relationships + communities + text_units
+    if (total > 0) {
+      let last_index_time = outputStats?.last_index_time
+      if (!last_index_time) {
         try { const st = await fs.stat(path.join(dataDir, 'entities.json')); last_index_time = new Date(st.mtimeMs).toISOString() } catch {}
-        outputStats = { entities, relationships, communities, text_units, last_index_time }
-      } else {
-        outputStats = undefined
       }
+      outputStats = { entities, relationships, communities, text_units, last_index_time }
+    } else {
+      outputStats = undefined
     }
   } catch {}
   // Merge with uploads registry
   const uploads = await readUploads(root)
+  uploads.forEach(upload => {
+    if (upload.status === 'removed') upload.status = 'pending_removal'
+  })
   const byName = new Map<string, UploadEntry>(uploads.map((u) => [u.name, u]))
   // ensure every file in input has an entry
   inputFiles.forEach((f) => {

@@ -27,11 +27,15 @@ export async function convertPdfToText(pdfPath: string, outputDir: string, outpu
   }
   const buf = await fs.readFile(pdfPath)
   const data = await pdfParse(buf)
+  const extractedText = data.text || ''
+  if (extractedText.trim().length < 100) {
+    throw new Error('IMAGE_ONLY_PDF: no usable text layer detected; replace this file with a text-backed PDF')
+  }
   const base = outputName || path.basename(pdfPath).replace(/\.pdf$/i, '') + '.txt'
   const outPath = path.join(outputDir, base)
   await fs.mkdir(outputDir, { recursive: true })
   const header = `\n${'='.repeat(50)}\nEXTRACTED FROM: ${path.basename(pdfPath)}\nPAGES: ${data.numpages ?? ''}\n${'='.repeat(50)}\n\n`
-  await fs.writeFile(outPath, header + (data.text || ''), 'utf-8')
+  await fs.writeFile(outPath, header + extractedText, 'utf-8')
   return outPath
 }
 
@@ -51,14 +55,17 @@ async function readParquetAll(filePath: string): Promise<unknown[]> {
 }
 
 async function readParquetViaPython(filePath: string): Promise<unknown[]> {
-  const py = process.env.PYTHON || 'python3'
   const code = [
     'import sys, json',
     'import pyarrow.parquet as pq',
     'tbl = pq.read_table(sys.argv[1])',
     'print(json.dumps(tbl.to_pylist()))',
   ].join('; ')
-  const { stdout } = await execFileP(py, ['-c', code, filePath])
+  // PyArrow is pinned in the project's uv environment with GraphRAG. Do not
+  // depend on a globally installed Python package.
+  const { stdout } = await execFileP('uv', ['run', 'python', '-c', code, filePath], {
+    cwd: path.dirname(path.dirname(filePath)),
+  })
   try { return JSON.parse(stdout) as unknown[] } catch { return [] }
 }
 
@@ -68,6 +75,7 @@ export async function convertGraphParquetToJson(outputDir: string): Promise<{ co
     'relationships.parquet',
     'communities.parquet',
     'community_reports.parquet',
+    'text_units.parquet',
   ]
 
   await fs.mkdir(outputDir, { recursive: true })

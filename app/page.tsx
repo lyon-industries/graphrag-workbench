@@ -3,14 +3,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Eye, X } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
+import { Eye, FolderKanban, X } from 'lucide-react';
 import GraphVisualizer from '@/components/GraphVisualizer';
 import Inspector from '@/components/Inspector';
-import ChatPanel from '@/components/ChatPanel';
 import CorpusPanel from '@/components/CorpusPanel';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 // SettingsModal removed
 import { GraphDataLoader, GraphData, type Community } from '../lib/graphData';
 import { ForceSimulation3D, GraphLayout, Node3D, defaultForceConfig } from '../lib/forceSimulation';
@@ -34,8 +31,9 @@ export default function Home() {
   const [inspectorMode, setInspectorMode] = useState<boolean>(false);
   const [selectedLevel] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [leftTab, setLeftTab] = useState<'corpus' | 'chat' | 'inspector'>('corpus');
-  const [lastNonInspectorTab, setLastNonInspectorTab] = useState<'corpus' | 'chat'>('corpus');
+  const [projectPanelOpen, setProjectPanelOpen] = useState(false);
+  const [projectNameRequired, setProjectNameRequired] = useState(false);
+  const [currentProjectName, setCurrentProjectName] = useState('');
   const [ragHighlightedNodeIds] = useState<Set<string>>(new Set());
   
   // Settings modal removed
@@ -56,14 +54,19 @@ export default function Home() {
         const corpusRes = await fetch('/api/corpus/state', { cache: 'no-store' });
         if (corpusRes.ok) {
           const corpus = await corpusRes.json();
+          const requiresName = !corpus.kgName || !String(corpus.kgName).trim();
+          setCurrentProjectName(corpus.kgName ? String(corpus.kgName) : '');
+          setProjectNameRequired(requiresName);
+          if (requiresName) setProjectPanelOpen(true);
           
           // If no uploads or no output stats, show getting started instead of loading
           const hasUploads = corpus.uploads && corpus.uploads.length > 0;
           const hasIndex = corpus.outputStats && ((corpus.outputStats.entities ?? 0) + (corpus.outputStats.relationships ?? 0) + (corpus.outputStats.communities ?? 0) + (corpus.outputStats.text_units ?? 0) > 0);
           
           if (!hasUploads || !hasIndex) {
+            setProjectPanelOpen(true);
             setLoading(false);
-            return; // Show getting started card
+            return;
           }
         }
 
@@ -156,23 +159,6 @@ export default function Home() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
-
-  // Auto-switch to Inspector on node select; restore previous tab on deselect
-  useEffect(() => {
-    if (selectedNode) {
-      if (leftTab !== 'inspector') {
-        if (leftTab === 'corpus' || leftTab === 'chat') {
-          setLastNonInspectorTab(leftTab)
-        }
-        setLeftTab('inspector')
-      }
-    } else {
-      // Restore last non-inspector tab when node deselected
-      setLeftTab(lastNonInspectorTab)
-    }
-    // Only react to selection changes; allow manual tab changes while selected
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNode])
 
   // settings-related handlers removed
 
@@ -314,18 +300,6 @@ export default function Home() {
     }
   }, []);
 
-  // Map community levels to human-readable universe terms
-  const getLevelLabel = useCallback((level: number): string => {
-    const levelMap: Record<number, string> = {
-      0: 'Sector',
-      1: 'System', 
-      2: 'Subsystem',
-      3: 'Component',
-      4: 'Element'
-    };
-    return levelMap[level] || `L${level}`;
-  }, []);
-
   // Calculate which communities to show based on selected node and inspector mode
   const visibleCommunities = useMemo(() => {
     if (!layout?.communities) return [];
@@ -358,38 +332,9 @@ export default function Home() {
   return (
     <div className="w-screen h-screen bg-background overflow-hidden relative">
       {/* Main Content */}
-      <div className="h-full w-full border-t  overflow-hidden flex">
-        {/* Left Panel - Fixed width */}
-        <div className="h-full flex flex-col border-r w-[520px] shrink-0 relative z-50 isolate pointer-events-auto">
-          <div className="p-2 border-b">
-            <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as 'corpus'|'chat'|'inspector')} className="w-full">
-              <TabsList className="grid grid-cols-3 w-full">
-                <TabsTrigger value="corpus">Corpus</TabsTrigger>
-                <TabsTrigger value="chat">Chat</TabsTrigger>
-                <TabsTrigger value="inspector">Inspector</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-          <div className="flex-1 min-h-0">
-            {leftTab === 'corpus' ? (
-              <CorpusPanel />
-            ) : leftTab === 'chat' ? (
-              <ChatPanel />
-            ) : (
-              <Inspector
-                selectedNode={selectedNode}
-                connectedLinks={connectedLinks}
-                visibleCommunities={visibleCommunities}
-                communityMode={effectiveCommunityMode}
-                onClose={() => setSelectedNode(null)}
-                onNodeSelect={setSelectedNode}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Right Panel - Graph Visualizer with state-aware loading */}
-        <div className="flex-1 min-w-0 h-full relative z-0">
+      <div className="h-full w-full overflow-hidden">
+        {/* Graph owns the full viewport. Inspector overlays it only when selected. */}
+        <div className="absolute inset-0 z-0">
           <div className="h-full">
             <GraphVisualizer
               layout={filteredLayout}
@@ -409,13 +354,35 @@ export default function Home() {
               searchTerm={searchTerm}
               onNodeHover={setHoveredNode}
               hoveredNode={hoveredNode}
+              viewportOffset={selectedNode ? 420 : 0}
             />
           </div>
         </div>
+
+        {selectedNode && (
+          <div className="graphrag-inspector-enter absolute inset-y-0 left-0 z-30 w-[420px] border-r border-white/15 pointer-events-auto">
+          <Inspector
+            selectedNode={selectedNode}
+            connectedLinks={connectedLinks}
+            visibleCommunities={visibleCommunities}
+            communityMode={effectiveCommunityMode}
+            onClose={() => setSelectedNode(null)}
+            onNodeSelect={setSelectedNode}
+            projectName={currentProjectName}
+          />
+          </div>
+        )}
       </div>
+
+      {!selectedNode && currentProjectName && (
+        <div className="pointer-events-none absolute left-4 top-4 z-20 border border-white/12 bg-[#05080b]/68 px-3 py-2 backdrop-blur-xl">
+          <div className="font-mono text-[8px] uppercase tracking-[0.12em] text-muted-foreground">Current project</div>
+          <div className="mt-0.5 max-w-64 truncate text-[11px] font-medium">{currentProjectName}</div>
+        </div>
+      )}
       
       {/* Floating Search and Settings Controls */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-3">
+      <div className="absolute right-4 top-4 z-20 flex items-center gap-1">
         <div className="relative">
           <div className="relative">
             <Input
@@ -423,7 +390,7 @@ export default function Home() {
               placeholder="Search entities..."
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
-              className="w-64 h-10 bg-card/90 backdrop-blur-sm border-border/50 pr-20"
+              className="h-9 w-56 rounded-none border-white/15 bg-[#05080b]/76 pr-16 text-[11px] backdrop-blur-xl placeholder:text-muted-foreground/70 focus-visible:border-primary"
             />
             <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
               {searchTerm && (
@@ -434,14 +401,14 @@ export default function Home() {
                     setSearchTerm('');
                     searchInputRef.current?.focus();
                   }}
-                  className="h-6 w-6 p-0 hover:bg-background/20"
+                  className="h-6 w-6 rounded-none p-0 hover:bg-white/[0.07]"
                   title="Clear search"
                 >
                   <X className="h-3 w-3" />
                 </Button>
               )}
-              <kbd className="pointer-events-none inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-xs font-medium opacity-100 select-none">
-                <span className="text-sm">⌘</span>K
+              <kbd className="pointer-events-none inline-flex h-5 items-center gap-1 border-l border-white/10 px-1.5 font-mono text-[9px] uppercase text-muted-foreground select-none">
+                <span>⌘</span>K
               </kbd>
             </div>
           </div>
@@ -450,39 +417,70 @@ export default function Home() {
         {/* GitHub Link */}
         <Button
           variant="outline"
-          size="sm"
+          size="icon"
           asChild
-          className="h-10 bg-card/90 backdrop-blur-sm border-border/50"
+          className="ml-1 h-9 w-9 rounded-none border-white/15 bg-[#05080b]/76 backdrop-blur-xl hover:bg-white/[0.07]"
         >
           <a
-            href="https://github.com/ChristopherLyon/graphrag-workbench"
+            href="https://github.com/lyon-industries/graphrag-workbench"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
+            aria-label="View source on GitHub"
+            title="GitHub"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
             </svg>
-            <span className="text-xs font-medium">GitHub</span>
           </a>
         </Button>
 
         {/* Isolator Mode Toggle */}
-        <div className="flex items-center gap-2 bg-card/90 backdrop-blur-sm border border-border/50 rounded-md px-3 h-10">
-          <Eye className="h-4 w-4" />
-          <Label htmlFor="isolator-mode" className="text-xs font-medium cursor-pointer">
-            Community Isolator
-          </Label>
-          <Switch
-            id="isolator-mode"
-            checked={inspectorMode}
-            onCheckedChange={setInspectorMode}
-            className="data-[state=checked]:bg-primary"
-          />
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-pressed={inspectorMode}
+          onClick={() => setInspectorMode(active => !active)}
+          className={`h-9 rounded-none border-white/15 bg-[#05080b]/76 px-3 font-mono text-[9px] uppercase tracking-[0.08em] backdrop-blur-xl hover:bg-white/[0.07] ${inspectorMode ? 'border-primary text-primary' : ''}`}
+          title="Show the selected entity's community hierarchy"
+        >
+          <Eye className="h-3.5 w-3.5" />
+          Isolate community
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-1 h-9 rounded-none border-white/15 bg-[#05080b]/76 px-3 font-mono text-[9px] uppercase tracking-[0.08em] backdrop-blur-xl hover:bg-white/[0.07]"
+          onClick={() => setProjectPanelOpen(true)}
+          aria-label="Open projects"
+          title="Projects"
+        >
+          <FolderKanban className="h-3.5 w-3.5" />
+          Projects
+        </Button>
 
         {/* Settings removed */}
       </div>
+
+      <Sheet open={projectPanelOpen || projectNameRequired} onOpenChange={(open) => {
+        if (!open && projectNameRequired) return;
+        setProjectPanelOpen(open);
+      }}>
+        <SheetContent className="w-[min(760px,calc(100vw-32px))] max-w-none gap-0 p-0 sm:max-w-none">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Projects</SheetTitle>
+            <SheetDescription>Create, load, rename, delete, inspect, and index local GraphRAG projects.</SheetDescription>
+          </SheetHeader>
+          <CorpusPanel onProjectNamed={(name) => {
+            setCurrentProjectName(name);
+            setProjectNameRequired(false);
+          }} onProjectDeleted={() => {
+            setCurrentProjectName('');
+            setProjectNameRequired(true);
+            setProjectPanelOpen(true);
+          }} />
+        </SheetContent>
+      </Sheet>
       
       {/* Settings modal removed */}
 

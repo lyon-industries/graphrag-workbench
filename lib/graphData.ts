@@ -118,12 +118,12 @@ export class GraphDataLoader {
     }
   }
 
-  private async fetchJsonFile(filename: string): Promise<unknown[]> {
+  private async fetchJsonFile(filename: string): Promise<Array<Record<string, unknown>>> {
     const response = await fetch(`${this.basePath}/${filename}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch ${filename}: ${response.statusText}`);
     }
-    return await response.json();
+    return await response.json() as Array<Record<string, unknown>>;
   }
 
   private parseJsonToEntities(data: Array<Record<string, unknown>>): Entity[] {

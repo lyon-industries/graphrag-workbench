@@ -29,12 +29,12 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
-        <div className="fixed bottom-4 right-4 z-50">
+        <div className="fixed bottom-6 right-6 z-50">
           <Image
-            src="/logo.png"
-            alt="Logo"
-            width={48}
-            height={48}
+            src="/lyon-industries-mark.png"
+            alt="Lyon Industries"
+            width={32}
+            height={41}
           />
         </div>
       </body>

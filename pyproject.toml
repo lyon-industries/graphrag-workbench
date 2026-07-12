@@ -1,0 +1,11 @@
+[project]
+name = "graphrag-workbench-adapter"
+version = "2.0.0"
+description = "Pinned local GraphRAG runtime for GraphRAG Workbench"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "graphrag==3.1.0",
+]
+
+[tool.uv]
+package = false

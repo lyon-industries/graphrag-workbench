@@ -1,13 +1,14 @@
 {
   "name": "graph-rag-visualizer",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev --turbopack --hostname 127.0.0.1",
     "launch": "if [ ! -d node_modules ]; then pnpm install; fi && if [ ! -d .next ]; then pnpm build; fi && pnpm start",
     "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "next start --hostname 127.0.0.1",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
@@ -49,11 +50,13 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.542.0",
-    "next": "15.5.2",
+    "next": "16.2.10",
     "next-themes": "^0.4.6",
-    "react": "19.1.0",
+    "parquetjs-lite": "^0.8.7",
+    "pdf-parse": "^1.1.1",
+    "react": "19.2.7",
     "react-day-picker": "^9.9.0",
-    "react-dom": "19.1.0",
+    "react-dom": "19.2.7",
     "react-hook-form": "^7.62.0",
     "react-resizable-panels": "^3.0.5",
     "recharts": "2.15.4",
@@ -61,20 +64,24 @@
     "tailwind-merge": "^3.3.1",
     "three": "^0.179.1",
     "vaul": "^1.1.2",
-    "zod": "^4.1.5",
-    "parquetjs-lite": "^0.8.7",
-    "pdf-parse": "^1.1.1"
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "eslint": "^9",
-    "eslint-config-next": "15.5.2",
+    "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.7",
     "typescript": "^5"
+  },
+  "pnpm": {
+    "overrides": {
+      "lodash": "4.18.0",
+      "postcss": "8.5.10"
+    }
   }
 }

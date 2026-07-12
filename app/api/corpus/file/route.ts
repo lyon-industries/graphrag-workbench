@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     }
     const lower = name.toLowerCase()
     const contentType = lower.endsWith('.pdf') ? 'application/pdf' : 'text/plain; charset=utf-8'
-    return new Response(data, {
+    return new Response(new Uint8Array(data), {
       headers: {
         'Content-Type': contentType,
         'Content-Disposition': `inline; filename="${name}"`,
