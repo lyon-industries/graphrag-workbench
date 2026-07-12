@@ -4,6 +4,7 @@ import path from 'node:path'
 // Dynamically import inside the function instead
 import parquet from 'parquetjs-lite'
 import { execFile } from 'node:child_process'
+import os from 'node:os'
 
 function execFileP(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -55,18 +56,26 @@ async function readParquetAll(filePath: string): Promise<unknown[]> {
 }
 
 async function readParquetViaPython(filePath: string): Promise<unknown[]> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'graphrag-parquet-'))
+  const jsonPath = path.join(tempDir, 'rows.json')
   const code = [
     'import sys, json',
     'import pyarrow.parquet as pq',
     'tbl = pq.read_table(sys.argv[1])',
-    'print(json.dumps(tbl.to_pylist()))',
+    'open(sys.argv[2], "w", encoding="utf-8").write(json.dumps(tbl.to_pylist()))',
   ].join('; ')
-  // PyArrow is pinned in the project's uv environment with GraphRAG. Do not
-  // depend on a globally installed Python package.
-  const { stdout } = await execFileP('uv', ['run', 'python', '-c', code, filePath], {
-    cwd: path.dirname(path.dirname(filePath)),
-  })
-  try { return JSON.parse(stdout) as unknown[] } catch { return [] }
+  try {
+    // Write large conversions to disk instead of stdout. Node's execFile
+    // buffer is intentionally small and truncating community reports here
+    // left the graph without its generated labels.
+    await execFileP('uv', ['run', 'python', '-c', code, filePath, jsonPath], {
+      cwd: path.dirname(path.dirname(filePath)),
+    })
+    const raw = await fs.readFile(jsonPath, 'utf-8')
+    return JSON.parse(raw) as unknown[]
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
 }
 
 const GRAPH_PARQUET_TARGETS = [

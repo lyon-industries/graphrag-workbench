@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { clearIndexJobRecord, stopIndexJob } from '@/lib/server/indexJob'
+import { clearIndexJobRecord, getIndexJob } from '@/lib/server/indexJob'
 
 export async function POST() {
   try {
-    await stopIndexJob()
     const root = process.cwd()
+    const currentName = await fs.readFile(path.join(root, 'output', 'kg.json'), 'utf-8')
+      .then(raw => String((JSON.parse(raw) as { name?: string }).name || '').trim())
+      .catch(() => '')
+    const job = getIndexJob()
+    if (job?.status === 'running' && job.projectName === currentName) {
+      return NextResponse.json({ error: 'Stop this project build before deleting it.' }, { status: 409 })
+    }
     await Promise.all([
       fs.rm(path.join(root, 'input'), { recursive: true, force: true }),
       fs.rm(path.join(root, 'output'), { recursive: true, force: true }),

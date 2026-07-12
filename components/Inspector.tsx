@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Building2, Calendar, Circle, FileText, GitBranch, Link2, MapPin, Network, User, X } from 'lucide-react'
+import { Building2, Calendar, Circle, FileText, GitBranch, Link2, MapPin, User, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Node3D, Link3D } from '../lib/forceSimulation'
 import { Community } from '../lib/graphData'
@@ -30,7 +30,7 @@ function EntityIcon({ type }: { type: string }) {
 function SectionLabel({ children, icon }: { children: React.ReactNode; icon: React.ReactNode }) {
   return (
     <div className="sticky top-0 z-10 flex h-8 items-center gap-2 border-b bg-[#05080b]/72 px-4 font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground backdrop-blur-md">
-      <span className="text-foreground/70">{icon}</span>
+      <span className="text-primary">{icon}</span>
       {children}
     </div>
   )
@@ -50,17 +50,6 @@ export default function Inspector({ selectedNode, connectedLinks, visibleCommuni
       .sort((a, b) => a.level - b.level)
     return { selected, parent, children }
   }, [selectedNode, visibleCommunities, communityMode])
-
-  const connected = React.useMemo(() => {
-    if (!selectedNode) return []
-    const nodes = new Map<string, { node: Node3D; weight: number }>()
-    connectedLinks.forEach(link => {
-      const node = link.source.id === selectedNode.id ? link.target : link.source
-      const current = nodes.get(node.id)
-      if (!current || link.weight > current.weight) nodes.set(node.id, { node, weight: link.weight })
-    })
-    return Array.from(nodes.values()).sort((a, b) => b.weight - a.weight)
-  }, [selectedNode, connectedLinks])
 
   const relationships = React.useMemo(
     () => [...connectedLinks].sort((a, b) => b.weight - a.weight),
@@ -154,28 +143,16 @@ export default function Inspector({ selectedNode, connectedLinks, visibleCommuni
               return (
                 <button key={link.id} className="grid w-full grid-cols-[1fr_42px] border-b px-4 py-2.5 text-left hover:bg-white/[0.035]" onClick={() => onNodeSelect(other)}>
                   <span className="min-w-0">
-                    <span className="block truncate text-[11px] font-medium">{other.title}</span>
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate text-[11px] font-medium">{other.title}</span>
+                      <span className="shrink-0 font-mono text-[8px] uppercase tracking-[0.08em] text-muted-foreground">{other.type}</span>
+                    </span>
                     <span className="mt-0.5 block line-clamp-2 text-[10px] leading-4 text-muted-foreground">{link.description}</span>
                   </span>
                   <span className="text-right font-mono text-[10px] tabular-nums text-muted-foreground">{link.weight}</span>
                 </button>
               )
             })}
-          </section>
-        )}
-
-        {connected.length > 0 && (
-          <section className="border-t">
-            <SectionLabel icon={<Network className="h-3 w-3" />}>Connected entities · {connected.length}</SectionLabel>
-            {connected.map(({ node, weight }) => (
-              <button key={node.id} className="grid min-h-9 w-full grid-cols-[1fr_48px] items-center border-b px-4 text-left hover:bg-white/[0.035]" onClick={() => onNodeSelect(node)}>
-                <span className="min-w-0">
-                  <span className="block truncate text-[11px]">{node.title}</span>
-                  <span className="block font-mono text-[8px] uppercase tracking-[0.08em] text-muted-foreground">{node.type}</span>
-                </span>
-                <span className="text-right font-mono text-[9px] tabular-nums text-muted-foreground">{weight}</span>
-              </button>
-            ))}
           </section>
         )}
       </div>

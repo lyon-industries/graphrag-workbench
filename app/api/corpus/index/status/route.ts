@@ -9,6 +9,7 @@ export async function GET() {
     startedAt: job?.startedAt ?? null,
     finishedAt: job?.finishedAt ?? null,
     jobId: job?.id ?? null,
+    projectName: job?.projectName ?? null,
     progress: job?.progress ?? 0,
     dataVersion: job?.dataVersion ?? 0,
     provider: job?.provider ?? null,

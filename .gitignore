@@ -31,11 +31,12 @@ build/
 !/.env.example
 
 # Logs, caches, outputs
-logs/
-cache/
-output/
-archives/
-update_output/
+/logs/
+/cache/
+/output/
+/archives/
+/update_output/
+.build-jobs/
 
 # Editors/IDE
 .idea/
@@ -50,5 +51,4 @@ yarn-error.log*
 .vercel/
 input/_pdfs/
 input/
-.claude/
 .graphrag/

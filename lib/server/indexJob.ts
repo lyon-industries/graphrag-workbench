@@ -18,6 +18,8 @@ export type IndexJobEvent =
 
 export type IndexJob = {
   id: string
+  projectName: string
+  workRoot: string
   method: 'standard' | 'fast'
   buildProvider: BuildProvider
   child?: ChildProcess
@@ -131,6 +133,42 @@ const WORKFLOW_ARTIFACTS: Record<string, string[]> = {
   create_final_text_units: ['text_units.parquet'],
 }
 
+async function readProjectName(base: string, archived = false) {
+  const metaPath = archived ? path.join(base, 'kg.json') : path.join(base, 'output', 'kg.json')
+  try {
+    const raw = await fs.readFile(metaPath, 'utf-8')
+    return String((JSON.parse(raw) as { name?: string }).name || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+async function findProjectRoot(repositoryRoot: string, projectName: string) {
+  if (await readProjectName(repositoryRoot) === projectName) return repositoryRoot
+  const archivesRoot = path.join(repositoryRoot, 'archives')
+  const entries = await fs.readdir(archivesRoot, { withFileTypes: true }).catch(() => [])
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.includes('.__swap__')) continue
+    const candidate = path.join(archivesRoot, entry.name)
+    if (await readProjectName(candidate, true) === projectName) return candidate
+  }
+  return null
+}
+
+async function publishJobWorkspace(job: IndexJob, repositoryRoot: string, includeArtifacts: boolean) {
+  const projectRoot = await findProjectRoot(repositoryRoot, job.projectName)
+  if (!projectRoot) throw new Error(`Origin project not found: ${job.projectName}`)
+  if (includeArtifacts) {
+    for (const dir of ['input', 'output', 'cache', 'logs']) {
+      const source = path.join(job.workRoot, dir)
+      const target = path.join(projectRoot, dir)
+      await fs.rm(target, { recursive: true, force: true }).catch(() => {})
+      await fs.cp(source, target, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+  await fs.copyFile(path.join(job.workRoot, 'logs_history.log'), path.join(projectRoot, 'logs_history.log')).catch(() => {})
+}
+
 export async function startIndexJob(method: 'standard' | 'fast', buildProvider: BuildProvider): Promise<{ job?: IndexJob; error?: string }> {
   if (isIndexRunning()) return { error: 'INDEX_ALREADY_RUNNING' }
 
@@ -141,8 +179,30 @@ export async function startIndexJob(method: 'standard' | 'fast', buildProvider: 
     return { error: error instanceof Error ? error.message : 'PROVIDER_NOT_CONFIGURED' }
   }
   const providerConfig = resolveGraphRagEnv(providerEnv)
+  const repositoryRoot = process.cwd()
+  let projectName = ''
+  try {
+    const raw = await fs.readFile(path.join(repositoryRoot, 'output', 'kg.json'), 'utf-8')
+    projectName = String((JSON.parse(raw) as { name?: string }).name || '').trim()
+  } catch {}
+  if (!projectName) return { error: 'PROJECT_NAME_REQUIRED' }
+
+  const id = crypto.randomUUID()
+  const workRoot = path.join(repositoryRoot, '.build-jobs', id)
+  await fs.mkdir(workRoot, { recursive: true })
+  for (const dir of ['input', 'output', 'cache']) {
+    await fs.cp(path.join(repositoryRoot, dir), path.join(workRoot, dir), { recursive: true, force: true }).catch(() => {})
+  }
+  for (const entry of ['settings.yaml', 'prompts']) {
+    await fs.cp(path.join(repositoryRoot, entry), path.join(workRoot, entry), { recursive: true, force: true }).catch(() => {})
+  }
+  await fs.mkdir(path.join(workRoot, 'input'), { recursive: true })
+  await fs.mkdir(path.join(workRoot, 'output'), { recursive: true })
+
   const job: IndexJob = {
-    id: crypto.randomUUID(),
+    id,
+    projectName,
+    workRoot,
     method,
     buildProvider,
     startedAt: Date.now(),
@@ -161,7 +221,8 @@ export async function startIndexJob(method: 'standard' | 'fast', buildProvider: 
 }
 
 async function runJob(job: IndexJob, env: NodeJS.ProcessEnv, completionModel: string, embeddingModel: string, concurrency: number) {
-  const root = process.cwd()
+  const repositoryRoot = process.cwd()
+  const root = job.workRoot
   const logHistoryPath = path.join(root, 'logs_history.log')
 
   const appendLog = async (line: string) => {
@@ -202,7 +263,7 @@ async function runJob(job: IndexJob, env: NodeJS.ProcessEnv, completionModel: st
   // Fresh terminal history for this build.
   await fs.writeFile(logHistoryPath, '').catch(() => {})
   emit({ type: 'status', message: 'Preparing dataset…' })
-  log(`MODEL · ${job.provider.toUpperCase()} · ${completionModel} · EMBEDDING ${embeddingModel} · CONCURRENCY ${concurrency}`)
+  log(`BUILD · ${job.projectName} · MODEL ${job.provider.toUpperCase()} · ${completionModel} · EMBEDDING ${embeddingModel} · CONCURRENCY ${concurrency}`)
 
   // ---- Dataset preparation: stage removals, convert PDFs to text ----
   const inputDir = path.join(root, 'input')
@@ -460,6 +521,7 @@ async function runJob(job: IndexJob, env: NodeJS.ProcessEnv, completionModel: st
       if (!succeeded) {
         await restoreStagedRemovals()
         await writeRegistry(reg => { for (const r of reg) if (r.status === 'scanning') r.status = 'pending'; return reg })
+        await publishJobWorkspace(job, repositoryRoot, false).catch(() => {})
         finish(job.stopRequested ? 'stopped' : 'failed', false, job.fatalError ? 'PROVIDER_FATAL' : pipelineFailed ? 'PIPELINE_FAILED' : code)
         return
       }
@@ -486,6 +548,15 @@ async function runJob(job: IndexJob, env: NodeJS.ProcessEnv, completionModel: st
         await fs.rm(pendingDir, { recursive: true, force: true })
       } catch {}
       setProgress(100)
+      try {
+        await publishJobWorkspace(job, repositoryRoot, true)
+        log(`PUBLISHED · ${job.projectName} artifacts updated`)
+        await publishJobWorkspace(job, repositoryRoot, false)
+      } catch (error) {
+        log(`PUBLISH FAILED · ${String(error)}`)
+        finish('failed', false, 'PUBLISH_FAILED')
+        return
+      }
       finish('succeeded', true, code)
     })()
   })

@@ -59,9 +59,12 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
   const [providerSetupOpen, setProviderSetupOpen] = useState(false)
   const [providerSetupTab, setProviderSetupTab] = useState<'local' | 'cloud'>('local')
   const [activeBuildProvider, setActiveBuildProvider] = useState<'local' | 'cloud' | null>(null)
+  const [jobProjectName, setJobProjectName] = useState<string | null>(null)
+  const [anyJobRunning, setAnyJobRunning] = useState(false)
+  const [jobModel, setJobModel] = useState<string | null>(null)
   const sseRef = useRef<EventSource | null>(null)
   const logContainerRef = useRef<HTMLDivElement | null>(null)
-  const wasRunningRef = useRef(false)
+  const wasAnyJobRunningRef = useRef(false)
 
   const loadLogs = useCallback(async () => {
     try {
@@ -116,30 +119,36 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
       try {
         const response = await fetch('/api/corpus/index/status', { cache: 'no-store' })
         if (!response.ok || cancelled) return
-        const job = await response.json() as { running?: boolean; status?: string; startedAt?: number | null; progress?: number; buildProvider?: 'local' | 'cloud' | null }
+        const job = await response.json() as { running?: boolean; status?: string; startedAt?: number | null; progress?: number; buildProvider?: 'local' | 'cloud' | null; projectName?: string | null; completionModel?: string | null }
         const isRunning = job.running === true
-        setRunning(isRunning)
+        const selectedProjectIsRunning = isRunning && job.projectName === state.kgName
+        setAnyJobRunning(isRunning)
+        setJobProjectName(job.projectName ?? null)
+        setJobModel(job.completionModel ?? null)
+        setRunning(selectedProjectIsRunning)
         setActiveBuildProvider(job.buildProvider ?? null)
         if (typeof job.progress === 'number') setProgress(job.progress)
-        if (isRunning) {
+        if (selectedProjectIsRunning) {
           setRunStatus('running')
           if (job.startedAt) setStartTime(job.startedAt)
           await loadLogs()
         } else {
-          if (wasRunningRef.current) {
+          if (wasAnyJobRunningRef.current) {
             setStartTime(null)
             await Promise.all([loadLogs(), refresh()])
-            if (job.status === 'succeeded') notifyGraph('graph-data-updated')
+            if (job.status === 'succeeded' && job.projectName === state.kgName) notifyGraph('graph-data-updated')
           }
-          setRunStatus(job.status === 'succeeded' ? 'succeeded' : job.status === 'failed' ? 'failed' : 'idle')
+          if (job.projectName === state.kgName) {
+            setRunStatus(job.status === 'succeeded' ? 'succeeded' : job.status === 'failed' ? 'failed' : 'idle')
+          }
         }
-        wasRunningRef.current = isRunning
+        wasAnyJobRunningRef.current = isRunning
       } catch {}
     }
     syncJob()
     const timer = window.setInterval(syncJob, 1000)
     return () => { cancelled = true; window.clearInterval(timer) }
-  }, [loadLogs, refresh])
+  }, [loadLogs, refresh, state.kgName])
 
   useEffect(() => {
     setCurrentNameDraft(state.kgName || '')
@@ -196,6 +205,8 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
   }
 
   const restoreArchive = async (name: string) => {
+    sseRef.current?.close()
+    sseRef.current = null
     const response = await fetch('/api/corpus/archive/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -272,7 +283,7 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
   }
 
   const startIndex = (provider: 'local' | 'cloud') => {
-    if (running) return
+    if (anyJobRunning) return
     if (!providerStatus?.[provider].ready) {
       setProviderSetupTab(provider)
       setProviderSetupOpen(true)
@@ -286,6 +297,8 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
     setRunning(true)
     setRunStatus('running')
     setActiveBuildProvider(provider)
+    setJobProjectName(state.kgName || null)
+    setAnyJobRunning(true)
     const source = new EventSource(`/api/corpus/index/stream?provider=${provider}`)
     sseRef.current = source
     source.onmessage = event => {
@@ -293,10 +306,11 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
         const message = JSON.parse(event.data)
         if (message.type === 'log') setLiveLogs(previous => [...previous, message.line])
         if (message.type === 'progress' && typeof message.value === 'number') setProgress(message.value)
-        // New artifacts were converted mid-build; let the constellation
-        // populate immediately instead of waiting for the pipeline to finish.
-        if (message.type === 'partial') notifyGraph('graph-data-updated')
+        // Builds run in an isolated workspace. The selected graph updates only
+        // after the complete artifact set is published back to its
+        // originating project.
         if (message.type === 'done') {
+          setAnyJobRunning(false)
           setRunning(false)
           setRunStatus(message.ok === true ? 'succeeded' : 'failed')
           setStartTime(null)
@@ -320,6 +334,7 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
       sseRef.current?.close()
       sseRef.current = null
       setRunning(false)
+      setAnyJobRunning(false)
       setRunStatus('idle')
       setStartTime(null)
       await loadLogs()
@@ -338,7 +353,9 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
     ]
   }, [liveLogs, persistedLogs])
   const terminalLines = React.useMemo(() => {
-    const lines = mergedLogs.flatMap(entry => entry.text.split(/\r?\n/).filter(Boolean).map(text => ({ ts: entry.ts, text })))
+    const lines = mergedLogs
+      .flatMap(entry => entry.text.split(/[\r\n]+/).filter(Boolean).map(text => ({ ts: entry.ts, text: text.trim() })))
+      .filter(line => !/^\d+\s*\/\s*\d+(?:\s+\.*)?$/.test(line.text))
     const completed = new Set(lines.map(line => line.text.match(/Workflow complete:\s*(.+)/i)?.[1]?.trim()).filter(Boolean) as string[])
     const failed = lines.some(line => /Pipeline error:|completed with errors/i.test(line.text)) || runStatus === 'failed'
     const lastLine = lines.length - 1
@@ -355,7 +372,18 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
             : starting || (running && index === lastLine)
               ? 'active'
               : undefined
-      return { ...line, state }
+      const kind = isError || /ENGINE ERROR|FATAL|PUBLISH FAILED/i.test(line.text)
+        ? 'error'
+        : /warning/i.test(line.text)
+          ? 'warning'
+          : complete || /PUBLISHED ·|Pipeline complete|Converted \d+ parquet/i.test(line.text)
+            ? 'success'
+            : starting
+              ? 'workflow'
+              : /BUILD ·|Starting pipeline|LIVE VIEW ·|PENDING REMOVAL/i.test(line.text)
+                ? 'system'
+                : 'output'
+      return { ...line, state, kind }
     })
   }, [mergedLogs, runStatus, running])
 
@@ -386,13 +414,17 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
         <div className="min-h-0 flex-1 overflow-auto" data-hmi-scroll>
           {hasName && (
             <div className="flex h-12 flex-col justify-center border-b border-l-2 border-l-primary bg-white/[0.035] px-3">
-              <div className="truncate text-[11px] font-medium">{state.kgName}</div>
-              <div className="mt-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-muted-foreground">Active · local</div>
+              <div className="flex items-center gap-2">
+                {anyJobRunning && jobProjectName === state.kgName && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="Build running" />}
+                <div className="truncate text-[11px] font-medium">{state.kgName}</div>
+              </div>
+              <div className="mt-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-muted-foreground">{anyJobRunning && jobProjectName === state.kgName ? `Building · ${progress}%` : 'Active · local'}</div>
             </div>
           )}
           {archives.map(project => {
             const isEditing = editingArchive === project.name
             const isDeleting = pendingDelete === project.name
+            const isBuilding = anyJobRunning && jobProjectName === (project.kgName || project.name)
             return (
               <div key={project.name} className="border-b px-3 py-2">
                 {isEditing ? (
@@ -403,15 +435,18 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
                   </form>
                 ) : (
                   <>
-                    <button className="block w-full truncate text-left text-[11px] hover:underline" onClick={() => restoreArchive(project.name)}>{project.kgName || project.name}</button>
+                    <button className="flex w-full items-center gap-2 text-left text-[11px] hover:underline" onClick={() => restoreArchive(project.name)}>
+                      {isBuilding && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" aria-label="Build running" />}
+                      <span className="truncate">{project.kgName || project.name}</span>
+                    </button>
                     <div className="mt-1 flex items-center justify-between">
-                      <span className="font-mono text-[8px] uppercase text-muted-foreground">{project.sizeKB.toFixed(1)} KB</span>
+                      <span className="font-mono text-[8px] uppercase text-muted-foreground">{isBuilding ? `Building · ${progress}%` : `${project.sizeKB.toFixed(1)} KB`}</span>
                       <div className="flex">
-                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-none" onClick={() => { setEditingArchive(project.name); setArchiveNameDraft(project.kgName || project.name) }} title="Rename"><Pencil className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-none" disabled={isBuilding} onClick={() => { setEditingArchive(project.name); setArchiveNameDraft(project.kgName || project.name) }} title={isBuilding ? 'Stop the build before renaming' : 'Rename'}><Pencil className="h-3 w-3" /></Button>
                         {isDeleting ? (
                           <Button variant="destructive" size="sm" className="h-6 rounded-none px-2 text-[9px]" onClick={() => deleteArchive(project.name)}>Confirm</Button>
                         ) : (
-                          <Button variant="ghost" size="icon" className="h-6 w-6 rounded-none" onClick={() => setPendingDelete(project.name)} title="Delete"><Trash2 className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 rounded-none" disabled={isBuilding} onClick={() => setPendingDelete(project.name)} title={isBuilding ? 'Stop the build before deleting' : 'Delete'}><Trash2 className="h-3 w-3" /></Button>
                         )}
                       </div>
                     </div>
@@ -446,7 +481,7 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
                 </form>
               ) : (
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2"><span className="truncate text-[13px] font-medium">{state.kgName}</span><Button variant="ghost" size="icon" className="h-6 w-6 rounded-none" onClick={() => setEditingCurrentName(true)} title="Rename"><Pencil className="h-3 w-3" /></Button></div>
+                  <div className="flex items-center gap-2"><span className="truncate text-[13px] font-medium">{state.kgName}</span><Button variant="ghost" size="icon" className="h-6 w-6 rounded-none" disabled={running} onClick={() => setEditingCurrentName(true)} title={running ? 'Stop the build before renaming' : 'Rename'}><Pencil className="h-3 w-3" /></Button></div>
                   <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">{running ? `Indexing · ${elapsed}s` : stats ? 'Indexed · local' : 'Not indexed · local'}</div>
                 </div>
               )}
@@ -463,6 +498,11 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
                 <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" onClick={() => setProviderSetupOpen(true)} title="Configure build providers"><Settings2 className="h-3.5 w-3.5" /></Button>
                 {running ? (
                   <Button variant="destructive" size="sm" className="h-8 rounded-none text-[10px]" onClick={stopIndex} disabled={stopping}>{stopping ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />} {stopping ? 'Stopping' : `Stop ${activeBuildProvider || ''}`}</Button>
+                ) : anyJobRunning ? (
+                  <div className="flex h-8 max-w-[230px] items-center gap-2 border border-white/10 px-3 font-mono text-[8px] uppercase tracking-[0.08em] text-muted-foreground" title={`Build continues for ${jobProjectName || 'another project'}`}>
+                    <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
+                    <span className="truncate">Background · {jobProjectName}</span>
+                  </div>
                 ) : (
                   <>
                     <Button variant="outline" size="sm" className="h-8 rounded-none text-[10px]" onClick={() => startIndex('local')} disabled={!files.length}><HardDrive className="h-3 w-3" /> Run with Ollama</Button>
@@ -488,9 +528,26 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
         )}
       </main>
       {hasName && (
-        <section className="col-span-2 row-start-2 flex min-h-0 min-w-0 flex-col border-t border-white/10 bg-black/35 text-neutral-200">
-          <div className="flex h-9 min-w-0 shrink-0 items-center justify-between gap-2 overflow-hidden border-b border-white/10 px-3"><span className="flex min-w-0 items-center gap-2 truncate font-mono text-[9px] uppercase tracking-[0.1em] text-neutral-400"><Terminal className="h-3 w-3 shrink-0" /> Terminal</span><span className={`max-w-[45%] shrink-0 truncate whitespace-nowrap text-right font-mono text-[8px] tabular-nums uppercase ${runStatus === 'failed' ? 'text-red-400' : runStatus === 'succeeded' ? 'text-green-400' : running ? 'text-primary' : 'text-neutral-500'}`}>{running ? `Running ${formatElapsed(elapsed)} · ${progress}%` : runStatus}</span></div>
-          <div ref={logContainerRef} className="min-h-0 flex-1 overflow-auto font-mono text-[9px] leading-4" data-hmi-scroll>{!terminalLines.length ? <div className="px-4 py-3 text-neutral-600">No process output.</div> : terminalLines.map((entry, index) => <div key={`${entry.ts}-${index}`} className={`grid min-w-0 grid-cols-[36px_18px_minmax(0,1fr)] border-b border-white/[0.04] px-2 py-0.5 ${entry.state === 'error' ? 'bg-red-500/[0.06] text-red-300' : entry.state === 'success' ? 'text-green-300' : 'text-neutral-300'}`}><span className="select-none pr-2 text-right tabular-nums text-neutral-600">{index + 1}</span><span className="flex items-start justify-center pt-0.5">{entry.state === 'active' ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : entry.state === 'success' ? <Check className="h-3 w-3 text-green-400" /> : entry.state === 'error' ? <X className="h-3 w-3 text-red-400" /> : null}</span><span className="min-w-0 whitespace-pre-wrap break-words">{entry.text.trim()}</span></div>)}</div>
+        <section className="col-span-2 row-start-2 flex min-h-0 min-w-0 flex-col border-t border-white/10 bg-[#030506]/88 text-neutral-200">
+          <div className="shrink-0 border-b border-white/10 bg-white/[0.018]">
+            <div className="flex h-9 min-w-0 items-center justify-between gap-4 px-3">
+              <span className="flex min-w-0 items-center gap-2 font-mono text-[9px] uppercase tracking-[0.12em] text-neutral-300"><Terminal className="h-3 w-3 shrink-0 text-primary" /> Build log <span className="truncate text-[8px] text-neutral-600">{state.kgName}</span></span>
+              <div className="flex min-w-0 items-center gap-3 font-mono text-[8px] uppercase tracking-[0.08em] text-neutral-500">
+                {running && <span className="max-w-48 truncate">{activeBuildProvider} · {jobModel}</span>}
+                <span className={`shrink-0 tabular-nums ${runStatus === 'failed' ? 'text-red-400' : runStatus === 'succeeded' ? 'text-green-400' : running ? 'text-primary' : ''}`}>{running ? `${formatElapsed(elapsed)} · ${progress}%` : runStatus}</span>
+              </div>
+            </div>
+            <div className="h-px bg-white/[0.04]" aria-hidden><div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${running || runStatus === 'succeeded' ? progress : 0}%` }} /></div>
+          </div>
+          <div ref={logContainerRef} className="min-h-0 flex-1 overflow-auto py-1 font-mono text-[9px] leading-4" data-hmi-scroll aria-label="Build process output">
+            {!terminalLines.length ? <div className="px-4 py-4 text-neutral-600">No build output for this project.</div> : terminalLines.map((entry, index) => (
+              <div key={`${entry.ts}-${index}`} className={`grid min-w-0 grid-cols-[54px_18px_minmax(0,1fr)] gap-1 px-3 py-1 ${entry.kind === 'error' ? 'bg-red-500/[0.07] text-red-300' : entry.kind === 'warning' ? 'bg-amber-400/[0.04] text-amber-200/80' : entry.kind === 'success' ? 'text-emerald-300/90' : entry.kind === 'workflow' ? 'text-neutral-100' : entry.kind === 'system' ? 'text-[#9fb9cc]' : 'text-neutral-400'}`}>
+                <time className="select-none whitespace-nowrap tabular-nums text-neutral-700">{new Date(entry.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })}</time>
+                <span className="flex items-start justify-center pt-0.5">{entry.state === 'active' ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : entry.state === 'success' ? <Check className="h-3 w-3 text-emerald-400" /> : entry.state === 'error' ? <X className="h-3 w-3 text-red-400" /> : <span className="mt-1 h-1 w-1 rounded-full bg-current opacity-30" />}</span>
+                <span className="min-w-0 whitespace-pre-wrap break-words">{entry.text}</span>
+              </div>
+            ))}
+          </div>
         </section>
       )}
       <ProviderSetupDialog open={providerSetupOpen} onOpenChange={setProviderSetupOpen} status={providerStatus} onStatusChange={setProviderStatus} initialTab={providerSetupTab} />

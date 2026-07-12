@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { clearIndexJobRecord, stopIndexJob } from '@/lib/server/indexJob'
+import { clearIndexJobRecord } from '@/lib/server/indexJob'
 
 async function moveDir(src: string, dst: string) {
   try {
@@ -37,10 +37,6 @@ export async function POST(req: Request) {
     const base = path.join(root, 'archives', name)
     // Verify archive exists
     await fs.stat(base)
-    // A running build writes into the working set being swapped out; stop it
-    // so its logs and artifacts cannot bleed into the restored project.
-    await stopIndexJob()
-
     let currentKgName = name
     try {
       const raw = await fs.readFile(path.join(root, 'output', 'kg.json'), 'utf-8')
