@@ -4,7 +4,13 @@ A local workbench for turning documents into an inspectable 3D knowledge graph.
 
 GraphRAG Workbench wraps [Microsoft GraphRAG](https://github.com/microsoft/graphrag) with local document preparation, indexing controls, a live terminal, project management, and the original Three.js graph. It is a dedicated open-source desktop-style web app: clone it, run it, and configure local or cloud models inside the Builder.
 
+https://github.com/user-attachments/assets/1f588a45-07ca-4953-92ed-fc888fe28cff
+
 ## Version 2.0
+
+![GraphRAG Workbench 2.0 showing an Apollo 11 entity inspector beside the live knowledge graph](docs/screenshots/graphrag-workbench-2.0-inspector.png)
+
+*Inspect entity evidence, community hierarchy, and strongest relationships without leaving the live graph.*
 
 - Microsoft GraphRAG 3.1.0, pinned with `uv`
 - per-build Local / Ollama and Cloud / OpenAI presets configured in the interface
@@ -17,6 +23,10 @@ GraphRAG Workbench wraps [Microsoft GraphRAG](https://github.com/microsoft/graph
 - engine-log surfacing with fast failure on fatal provider errors (quota, authentication, missing model)
 - text-backed PDF validation and transactional file removal
 - no account, hosted database, or remote document service
+
+![GraphRAG Workbench 2.0 full-corpus Apollo 11 knowledge graph](docs/screenshots/graphrag-workbench-2.0-graph.png)
+
+*Navigate the complete corpus in one full-screen spatial workbench.*
 
 Chat is intentionally absent from 2.0 while its next interaction model is designed.
 
