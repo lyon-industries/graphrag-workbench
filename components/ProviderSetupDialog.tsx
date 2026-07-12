@@ -23,7 +23,6 @@ export type ProviderStatus = {
   cloud: {
     ready: boolean
     keyStored: boolean
-    keyFromEnvironment: boolean
     completionModel: string
     embeddingModel: string
   }
@@ -38,9 +37,9 @@ export function ProviderSetupDialog({ open, onOpenChange, status, onStatusChange
 }) {
   const [tab, setTab] = useState(initialTab)
   const [apiKey, setApiKey] = useState('')
-  const [completionModel, setCompletionModel] = useState('gemma4:e4b')
-  const [embeddingModel, setEmbeddingModel] = useState('qwen3-embedding:0.6b')
-  const [embeddingVectorSize, setEmbeddingVectorSize] = useState(1024)
+  const [completionModel, setCompletionModel] = useState('gemma4:latest')
+  const [embeddingModel, setEmbeddingModel] = useState('embeddinggemma:latest')
+  const [embeddingVectorSize, setEmbeddingVectorSize] = useState(768)
   const [cloudCompletionModel, setCloudCompletionModel] = useState('gpt-5.6-luna')
   const [cloudEmbeddingModel, setCloudEmbeddingModel] = useState('text-embedding-3-small')
   const [saving, setSaving] = useState(false)
@@ -117,7 +116,7 @@ export function ProviderSetupDialog({ open, onOpenChange, status, onStatusChange
       <DialogContent className="max-h-[86dvh] max-w-2xl overflow-hidden rounded-none border-white/15 bg-[#05080b] p-0 text-[#eaeef0] shadow-none">
         <DialogHeader className="border-b border-white/10 px-6 py-5">
           <DialogTitle className="font-normal">Build providers</DialogTitle>
-          <DialogDescription>Choose where graph extraction and embeddings run. Configuration stays on this machine.</DialogDescription>
+          <DialogDescription>Configure two workbench-wide inference bindings. Every GraphRAG project can run through either provider.</DialogDescription>
         </DialogHeader>
         <Tabs value={tab} onValueChange={value => setTab(value as 'local' | 'cloud')} className="min-h-0 gap-0">
           <TabsList className="mx-6 mt-5 grid h-10 w-[calc(100%-3rem)] grid-cols-2 rounded-none bg-white/[0.04] p-0">
@@ -156,7 +155,7 @@ export function ProviderSetupDialog({ open, onOpenChange, status, onStatusChange
 
           <TabsContent value="cloud" className="min-h-0 overflow-auto px-6 py-5" data-hmi-scroll>
             <div className="grid gap-4">
-              <div className="border border-white/10 p-4 text-sm"><p>Cloud builds trade provider cost for faster indexing and stronger extraction.</p><p className="mt-1 text-xs text-[#9fb9cc]">The key is stored server-side in a gitignored file readable only by your operating-system account. It is never returned to the browser.</p></div>
+              <div className="border border-white/10 p-4 text-sm"><p>OpenAI trades provider cost for faster indexing and stronger extraction.</p><p className="mt-1 text-xs text-[#9fb9cc]">This workbench-wide key is available to every GraphRAG project. It is stored in a gitignored file readable only by your operating-system account and never returned to the browser.</p></div>
               <label className="grid gap-1.5 text-xs"><span>OpenAI API key</span><Input type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder={status?.cloud.ready ? 'Key configured — enter a new key to replace it' : 'sk-…'} className="rounded-none" /></label>
               <label className="grid gap-1.5 text-xs"><span>Extraction model</span><Input value={cloudCompletionModel} onChange={event => setCloudCompletionModel(event.target.value)} className="rounded-none" /></label>
               <label className="grid gap-1.5 text-xs"><span>Embedding model</span><Input value={cloudEmbeddingModel} onChange={event => setCloudEmbeddingModel(event.target.value)} className="rounded-none" /></label>

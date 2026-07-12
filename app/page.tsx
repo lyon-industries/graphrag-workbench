@@ -356,7 +356,7 @@ export default function Home() {
   // No key management UI in OpenAI-only mode
 
   return (
-    <div className="w-screen h-screen bg-background overflow-hidden relative">
+    <div className="relative h-screen w-screen overflow-hidden bg-background" data-hmi-root>
       {/* Main Content */}
       <div className="h-full w-full overflow-hidden">
         {/* Graph owns the full viewport. Inspector overlays it only when selected. */}

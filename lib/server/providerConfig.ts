@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -8,9 +9,9 @@ const configDir = () => path.join(process.cwd(), '.graphrag')
 const configPath = () => path.join(configDir(), 'providers.json')
 
 export const LOCAL_DEFAULTS = {
-  completionModel: 'gemma4:e4b',
-  embeddingModel: 'qwen3-embedding:0.6b',
-  embeddingVectorSize: 1024,
+  completionModel: 'gemma4:latest',
+  embeddingModel: 'embeddinggemma:latest',
+  embeddingVectorSize: 768,
 } as const
 
 export const CLOUD_DEFAULTS = {
@@ -83,7 +84,6 @@ export async function removeCloudKey() {
 
 export async function getProviderStatus() {
   const stored = await readProviderConfig()
-  const environmentIsCloud = process.env.GRAPHRAG_COMPLETION_PROVIDER === 'openai'
   let installed = false
   let version: string | null = null
   try {
@@ -105,7 +105,10 @@ export async function getProviderStatus() {
 
   const localCompletionModel = stored.local?.completionModel || LOCAL_DEFAULTS.completionModel
   const localEmbeddingModel = stored.local?.embeddingModel || LOCAL_DEFAULTS.embeddingModel
-  const hasModel = (name: string) => models.some(model => model === name || model === `${name}:latest` || model.split(':')[0] === name.split(':')[0])
+  const hasModel = (name: string) => models.some(model => {
+    if (name.includes(':')) return model === name
+    return model === name || model === `${name}:latest`
+  })
 
   return {
     local: {
@@ -121,11 +124,10 @@ export async function getProviderStatus() {
       embeddingReady: hasModel(localEmbeddingModel),
     },
     cloud: {
-      ready: Boolean(stored.openai?.apiKey || (environmentIsCloud && process.env.GRAPHRAG_API_KEY)),
+      ready: Boolean(stored.openai?.apiKey),
       keyStored: Boolean(stored.openai?.apiKey),
-      keyFromEnvironment: !stored.openai?.apiKey && environmentIsCloud && Boolean(process.env.GRAPHRAG_API_KEY),
-      completionModel: stored.openai?.completionModel || (environmentIsCloud ? process.env.GRAPHRAG_COMPLETION_MODEL : undefined) || CLOUD_DEFAULTS.completionModel,
-      embeddingModel: stored.openai?.embeddingModel || (environmentIsCloud ? process.env.GRAPHRAG_EMBEDDING_MODEL : undefined) || CLOUD_DEFAULTS.embeddingModel,
+      completionModel: stored.openai?.completionModel || CLOUD_DEFAULTS.completionModel,
+      embeddingModel: stored.openai?.embeddingModel || CLOUD_DEFAULTS.embeddingModel,
     },
   }
 }
@@ -144,18 +146,28 @@ export async function resolveProviderEnv(provider: BuildProvider, source: NodeJS
     env.GRAPHRAG_CONCURRENT_REQUESTS = '1'
     env.GRAPHRAG_EMBEDDING_VECTOR_SIZE = String(stored.local?.embeddingVectorSize || LOCAL_DEFAULTS.embeddingVectorSize)
   } else {
-    const environmentIsCloud = env.GRAPHRAG_COMPLETION_PROVIDER === 'openai'
-    const apiKey = stored.openai?.apiKey || (environmentIsCloud ? env.GRAPHRAG_API_KEY : undefined)
+    const apiKey = stored.openai?.apiKey
     if (!apiKey) throw new Error('CLOUD_NOT_CONFIGURED')
     env.GRAPHRAG_COMPLETION_PROVIDER = 'openai'
-    env.GRAPHRAG_COMPLETION_MODEL = stored.openai?.completionModel || (environmentIsCloud ? env.GRAPHRAG_COMPLETION_MODEL : undefined) || CLOUD_DEFAULTS.completionModel
-    env.GRAPHRAG_COMPLETION_API_BASE = environmentIsCloud ? env.GRAPHRAG_COMPLETION_API_BASE || 'https://api.openai.com/v1' : 'https://api.openai.com/v1'
+    env.GRAPHRAG_COMPLETION_MODEL = stored.openai?.completionModel || CLOUD_DEFAULTS.completionModel
+    env.GRAPHRAG_COMPLETION_API_BASE = 'https://api.openai.com/v1'
     env.GRAPHRAG_EMBEDDING_PROVIDER = 'openai'
-    env.GRAPHRAG_EMBEDDING_MODEL = stored.openai?.embeddingModel || (environmentIsCloud ? env.GRAPHRAG_EMBEDDING_MODEL : undefined) || CLOUD_DEFAULTS.embeddingModel
-    env.GRAPHRAG_EMBEDDING_API_BASE = environmentIsCloud ? env.GRAPHRAG_EMBEDDING_API_BASE || 'https://api.openai.com/v1' : 'https://api.openai.com/v1'
+    env.GRAPHRAG_EMBEDDING_MODEL = stored.openai?.embeddingModel || CLOUD_DEFAULTS.embeddingModel
+    env.GRAPHRAG_EMBEDDING_API_BASE = 'https://api.openai.com/v1'
     env.GRAPHRAG_API_KEY = apiKey
-    env.GRAPHRAG_CONCURRENT_REQUESTS = env.GRAPHRAG_CONCURRENT_REQUESTS || '4'
+    env.GRAPHRAG_CONCURRENT_REQUESTS = '4'
     env.GRAPHRAG_EMBEDDING_VECTOR_SIZE = String(CLOUD_DEFAULTS.embeddingVectorSize)
   }
+  // GraphRAG cache keys can collide across providers for the same input batch.
+  // Keep provider/model results physically separate so a local response can
+  // never be replayed into a cloud build (or the reverse).
+  const cacheSignature = createHash('sha256').update([
+    env.GRAPHRAG_COMPLETION_PROVIDER,
+    env.GRAPHRAG_COMPLETION_MODEL,
+    env.GRAPHRAG_EMBEDDING_PROVIDER,
+    env.GRAPHRAG_EMBEDDING_MODEL,
+    env.GRAPHRAG_EMBEDDING_VECTOR_SIZE,
+  ].join('|')).digest('hex').slice(0, 12)
+  env.GRAPHRAG_CACHE_DIR = `cache/${provider}-${cacheSignature}`
   return env
 }

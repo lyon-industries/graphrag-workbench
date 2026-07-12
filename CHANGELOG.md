@@ -2,8 +2,9 @@
 
 ## 2.0.0 - 2026-07-12
 
-- added in-app Local / Ollama and Cloud / OpenAI provider presets, readiness checks, guided Ollama setup and model pulls, and server-side API-key storage; `.env` editing is no longer required
+- added in-app Local / Ollama and Cloud / OpenAI provider presets, readiness checks, guided Ollama setup and model pulls, and server-side API-key storage; provider `.env` configuration has been removed
 - each build now explicitly selects its provider, so local and cloud can remain configured together
+- provider/model-specific cache namespaces prevent Ollama responses from being replayed into OpenAI builds and vice versa
 - upgraded the pinned indexing engine to Microsoft GraphRAG 3.1.0
 - moved index builds into a server-owned job: closing the Builder no longer interrupts a build, skips artifact conversion, or bleeds terminal output across projects
 - builds now populate the constellation live: entities and relationships appear when extraction completes, communities when clustering completes

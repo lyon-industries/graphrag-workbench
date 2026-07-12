@@ -43,10 +43,10 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Development and production 
 
 Open **Projects → Build providers**. Both presets can remain configured at the same time:
 
-- **Local / Ollama** detects the Ollama installation and service, links to the official installer when absent, and pulls the selected completion and embedding models with visible progress. The default preset is Gemma 4 E4B plus Qwen3 Embedding 0.6B at 1,024 dimensions.
-- **Cloud / OpenAI** accepts the API key and model names in a modal. The key is saved only on the local server in `.graphrag/providers.json`, which is excluded from Git and restricted to the operating-system account (`0600`). It is never returned to browser code.
+- **Local / Ollama** detects the Ollama installation and service, links to the official installer when absent, and pulls the selected completion and embedding models with visible progress. The default preset is Gemma 4 plus EmbeddingGemma at 768 dimensions.
+- **Cloud / OpenAI** accepts the API key and model names in a modal. The key is saved in the workbench-wide `.graphrag/providers.json`, restricted to the operating-system account (`0600`). It is outside every project, excluded from Git, and never returned to browser code.
 
-Each build has an explicit **Build local** or **Build cloud** command. Local builds avoid provider token charges and keep model processing on the workstation; cloud builds are normally faster and can use a stronger extraction model. Cloud indexing sends document content to the configured provider and can consume substantial model tokens.
+The Ollama and OpenAI bindings are workbench-wide settings, reused by every GraphRAG project. Each indexing run has an explicit **Run with Ollama** or **Run with OpenAI** command. Ollama avoids provider token charges and keeps model processing on the workstation; OpenAI is normally faster and can use a stronger extraction model. OpenAI indexing sends document content to the configured provider and can consume substantial model tokens.
 
 During a build the engine log is tailed into the Terminal. Fatal provider failures such as exhausted quota, a rejected key, or a missing model stop the run with the cause and recovery action named.
 
@@ -55,7 +55,7 @@ During a build the engine log is tailed into the Terminal. Fatal provider failur
 1. Open **Projects**.
 2. Give the project a human-readable name.
 3. Add one or more text-backed PDFs.
-4. Select **Build local** or **Build cloud** and follow each workflow in the Terminal. If that preset is not ready, the setup modal opens at the missing step.
+4. Select **Run with Ollama** or **Run with OpenAI** and follow each workflow in the Terminal. If that repository binding is not ready, the setup modal opens at the missing step.
 5. Close Projects to explore the graph.
 6. Select a node to open its Inspector; select a connected entity to traverse the graph.
 

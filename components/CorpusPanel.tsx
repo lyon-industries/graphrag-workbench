@@ -362,7 +362,7 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
   const hasName = Boolean(state.kgName?.trim())
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[220px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(180px,0.55fr)] bg-[#05080b]/72 text-[12px] backdrop-blur-2xl" data-hmi-root>
+    <div className="grid h-full min-h-0 grid-cols-[220px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(180px,0.55fr)] bg-[#05080b]/72 text-[12px] backdrop-blur-2xl">
       <nav className="row-start-1 flex min-h-0 flex-col border-r border-white/12 bg-black/20" aria-label="Projects">
         <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
           <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
@@ -465,8 +465,8 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
                   <Button variant="destructive" size="sm" className="h-8 rounded-none text-[10px]" onClick={stopIndex} disabled={stopping}>{stopping ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />} {stopping ? 'Stopping' : `Stop ${activeBuildProvider || ''}`}</Button>
                 ) : (
                   <>
-                    <Button variant="outline" size="sm" className="h-8 rounded-none text-[10px]" onClick={() => startIndex('local')} disabled={!files.length}><HardDrive className="h-3 w-3" /> Build local</Button>
-                    <Button size="sm" className="h-8 rounded-none text-[10px]" onClick={() => startIndex('cloud')} disabled={!files.length}><Cloud className="h-3 w-3" /> Build cloud</Button>
+                    <Button variant="outline" size="sm" className="h-8 rounded-none text-[10px]" onClick={() => startIndex('local')} disabled={!files.length}><HardDrive className="h-3 w-3" /> Run with Ollama</Button>
+                    <Button size="sm" className="h-8 rounded-none text-[10px]" onClick={() => startIndex('cloud')} disabled={!files.length}><Cloud className="h-3 w-3" /> Run with OpenAI</Button>
                   </>
                 )}
               </div>

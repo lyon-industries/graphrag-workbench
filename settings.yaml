@@ -1,6 +1,6 @@
 ### GraphRAG 3.1 local configuration.
-### Provider and model values come from .env so the same local application can
-### use OpenAI or an Ollama-compatible endpoint without changing source files.
+### Provider, model, cache, and vector values are generated from the
+### workbench-wide bindings selected in the interface for each run.
 
 # Parallel LLM requests across extraction, community reports, and embeddings.
 # Resolved from the environment so the workbench can tune it per provider:
@@ -93,13 +93,13 @@ cache:
   type: json
   storage:
     type: file
-    base_dir: cache
+    base_dir: ${GRAPHRAG_CACHE_DIR}
 
 vector_store:
   type: lancedb
   db_uri: output/lancedb
   # Must match the embedding model: text-embedding-3-small returns 1,536
-  # dimensions and qwen3-embedding:0.6b returns 1,024. GraphRAG 3.1 otherwise defaults
+  # dimensions and embeddinggemma returns 768. GraphRAG 3.1 otherwise defaults
   # the Lance schema to 3,072 and folds two embeddings into each row. The
   # workbench resolves this per provider; override in .env if needed.
   vector_size: ${GRAPHRAG_EMBEDDING_VECTOR_SIZE}
