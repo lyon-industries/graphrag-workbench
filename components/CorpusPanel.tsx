@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Cloud, FilePlus, FolderOpen, HardDrive, Loader2, Pencil, Plus, RotateCcw, Settings2, Square, Terminal, Trash2, X } from 'lucide-react'
+import { Check, Cloud, Download, FileInput, FilePlus, FolderInput, FolderOpen, HardDrive, Loader2, Pencil, Plus, RotateCcw, Settings2, Square, Terminal, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ProviderSetupDialog, type ProviderStatus } from '@/components/ProviderSetupDialog'
@@ -42,6 +42,8 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'failed' | 'succeeded'>('idle')
   const [stopping, setStopping] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [loading, setLoading] = useState(true)
   const [startTime, setStartTime] = useState<number | null>(null)
@@ -64,6 +66,8 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
   const [jobModel, setJobModel] = useState<string | null>(null)
   const sseRef = useRef<EventSource | null>(null)
   const logContainerRef = useRef<HTMLDivElement | null>(null)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
+  const bundleInputRef = useRef<HTMLInputElement | null>(null)
   const wasAnyJobRunningRef = useRef(false)
 
   const loadLogs = useCallback(async () => {
@@ -109,6 +113,11 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
   }, [])
 
   useEffect(() => { void refreshProviders() }, [refreshProviders])
+
+  useEffect(() => {
+    importInputRef.current?.setAttribute('webkitdirectory', '')
+    importInputRef.current?.setAttribute('directory', '')
+  }, [])
 
   // The index job is server-owned and survives this panel unmounting, so the
   // panel resynchronizes against /status: reattach to a running build, and
@@ -280,6 +289,32 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
       body: JSON.stringify({ name }),
     })
     if (response.ok) await refresh()
+  }
+
+  const importOutput = async (selection: FileList | null) => {
+    const files = selection ? Array.from(selection) : []
+    if (!files.length || importing) return
+    const body = new FormData()
+    files.forEach(file => body.append('files', file, file.webkitRelativePath || file.name))
+    setImporting(true)
+    setImportError(null)
+    try {
+      const response = await fetch('/api/corpus/import', { method: 'POST', body })
+      const result = await response.json().catch(() => ({})) as { error?: string }
+      if (!response.ok) {
+        setImportError(result.error || 'Output import failed.')
+        return
+      }
+      setLiveLogs([])
+      await refresh()
+      notifyGraph('graph-data-updated')
+    } catch {
+      setImportError('Output import failed.')
+    } finally {
+      setImporting(false)
+      if (importInputRef.current) importInputRef.current.value = ''
+      if (bundleInputRef.current) bundleInputRef.current.value = ''
+    }
   }
 
   const startIndex = (provider: 'local' | 'cloud') => {
@@ -519,7 +554,18 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
             </section>
 
             <section className={`min-h-0 flex-1 border-b ${dragOver ? 'bg-white/5' : ''}`} onDragOver={event => { event.preventDefault(); setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={event => { event.preventDefault(); setDragOver(false); if (event.dataTransfer.files.length) uploadFiles(event.dataTransfer.files) }}>
-                <div className="flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden border-b px-3"><span className="min-w-0 truncate font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground">Source files · {files.length}</span><div className="shrink-0"><Input id="project-file-input" type="file" multiple accept=".pdf" className="hidden" onChange={event => event.target.files && uploadFiles(event.target.files)} /><Button variant="ghost" size="sm" className="h-7 shrink-0 whitespace-nowrap rounded-none px-2 text-[10px]" onClick={() => document.getElementById('project-file-input')?.click()}>{uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FilePlus className="h-3 w-3" />} Add PDFs</Button></div></div>
+                <div className="flex h-9 min-w-0 items-center justify-between gap-2 overflow-hidden border-b px-3">
+                  <span className={`min-w-0 truncate font-mono text-[9px] uppercase tracking-[0.1em] ${importError ? 'text-red-400' : 'text-muted-foreground'}`}>{importError || `Source files · ${files.length}`}</span>
+                  <div className="flex shrink-0 items-center">
+                    <Input ref={importInputRef} type="file" multiple accept=".json,.parquet" className="hidden" onChange={event => void importOutput(event.target.files)} />
+                    <Input ref={bundleInputRef} type="file" accept=".json,.graphrag.json" className="hidden" onChange={event => void importOutput(event.target.files)} />
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 rounded-none" disabled={running || importing} onClick={() => importInputRef.current?.click()} title="Import a GraphRAG output directory">{importing ? <Loader2 className="h-3 w-3 animate-spin" /> : <FolderInput className="h-3 w-3" />}</Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 rounded-none" disabled={running || importing} onClick={() => bundleInputRef.current?.click()} title="Import a GraphRAG Workbench bundle"><FileInput className="h-3 w-3" /></Button>
+                    <Button asChild variant="ghost" size="icon" className="h-7 w-7 shrink-0 rounded-none" title="Export this project's graph output"><a href="/api/corpus/export" download><Download className="h-3 w-3" /><span className="sr-only">Export output</span></a></Button>
+                    <Input id="project-file-input" type="file" multiple accept=".pdf" className="hidden" onChange={event => event.target.files && uploadFiles(event.target.files)} />
+                    <Button variant="ghost" size="sm" className="h-7 shrink-0 whitespace-nowrap rounded-none px-2 text-[10px]" onClick={() => document.getElementById('project-file-input')?.click()}>{uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <FilePlus className="h-3 w-3" />} Add PDFs</Button>
+                  </div>
+                </div>
                 <div className="h-[calc(100%-2.25rem)] overflow-auto" data-hmi-scroll>
                   {!files.length ? <button className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground" onClick={() => document.getElementById('project-file-input')?.click()}>Drop PDFs here or choose files</button> : files.map(file => <div key={file.name} className="grid min-h-9 grid-cols-[minmax(0,1fr)_72px_112px_32px] items-center border-b px-4 text-[10px]"><a className="truncate hover:underline" href={`/api/corpus/file?name=${encodeURIComponent(file.name)}`} target="_blank" rel="noreferrer">{file.name}</a><span className="text-right font-mono text-[9px] text-muted-foreground">{formatSize(file.size)}</span><span className="text-right font-mono text-[8px] uppercase text-muted-foreground">{formatUploadStatus(file.status)}</span><Button variant="ghost" size="icon" className="h-7 w-7 rounded-none" disabled={file.status === 'pending_removal'} onClick={() => removeFile(file.name)} title={file.status === 'pending_removal' ? 'Removal scheduled for next successful build' : `Remove ${file.name}`}><Trash2 className="h-3 w-3" /></Button></div>)}
                 </div>

@@ -37,6 +37,7 @@ build/
 /archives/
 /update_output/
 .build-jobs/
+/.imports/
 
 # Editors/IDE
 .idea/

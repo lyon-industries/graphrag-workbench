@@ -11,6 +11,7 @@ GraphRAG Workbench wraps [Microsoft GraphRAG](https://github.com/microsoft/graph
 - full-screen 3D graph with search and community isolation
 - contextual Inspector for selected entities and their strongest connections
 - local Projects sheet for naming, loading, renaming, deleting, files, statistics, builds, and terminal output
+- native GraphRAG output-directory import plus portable Workbench bundle import/export
 - cancellable server-owned indexing with persisted workflow status; builds survive closing the Builder
 - live constellation population while a build runs: entities and relationships appear as extraction completes, communities as clustering completes
 - engine-log surfacing with fast failure on fatal provider errors (quota, authentication, missing model)
@@ -62,6 +63,15 @@ During a build the engine log is tailed into the Terminal. Fatal provider failur
 `Cmd/Ctrl + K` focuses entity search. Drag rotates, scroll zooms, and right-drag pans. **Isolate community** focuses the selected hierarchy.
 
 Image-only PDFs are rejected with an explicit terminal message. OCR is not included in 2.0. Removing a source schedules it for deletion; the file and its derived text are deleted only after the replacement graph builds successfully.
+
+## Import or export existing output
+
+The Projects source toolbar supports two import paths:
+
+- **Import directory** accepts a Microsoft GraphRAG `output/` folder containing at least `entities` and `relationships` as JSON or parquet. Supported parquet artifacts are converted locally before the active project is changed.
+- **Import bundle** accepts a `.graphrag.json` file previously exported by the workbench.
+
+**Export output** downloads the active project as a versioned `.graphrag.json` bundle containing the available entity, relationship, community, community-report, and text-unit tables. Imports are validated in a temporary directory before replacing graph artifacts. Source documents, provider credentials, caches, logs, and LanceDB indexes are not included in the portable bundle.
 
 ## Local data flow
 

@@ -60,11 +60,12 @@ export default function Home() {
           setProjectNameRequired(requiresName);
           if (requiresName) setProjectPanelOpen(true);
           
-          // If no uploads or no output stats, show getting started instead of loading
-          const hasUploads = corpus.uploads && corpus.uploads.length > 0;
+          // Imported GraphRAG output may not include source documents. The
+          // generated graph artifacts, not the upload registry, decide
+          // whether the constellation can load.
           const hasIndex = corpus.outputStats && ((corpus.outputStats.entities ?? 0) + (corpus.outputStats.relationships ?? 0) + (corpus.outputStats.communities ?? 0) + (corpus.outputStats.text_units ?? 0) > 0);
           
-          if (!hasUploads || !hasIndex) {
+          if (!hasIndex) {
             setProjectPanelOpen(true);
             setLoading(false);
             return;
