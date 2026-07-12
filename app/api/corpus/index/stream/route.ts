@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const attach = request.nextUrl.searchParams.get('attach') === '1'
 
   const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
+    async start(controller) {
       let closed = false
       const send = (payload: Record<string, unknown>) => {
         if (closed) return
@@ -37,7 +37,8 @@ export async function GET(request: NextRequest) {
           return
         }
       } else {
-        const result = startIndexJob(method)
+        const provider = request.nextUrl.searchParams.get('provider') === 'cloud' ? 'cloud' : 'local'
+        const result = await startIndexJob(method, provider)
         if (result.error || !result.job) {
           send({ type: 'done', ok: false, code: result.error ?? 'START_FAILED' })
           close()

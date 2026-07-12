@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, FilePlus, FolderOpen, Loader2, Pencil, Play, Plus, RotateCcw, Square, Terminal, Trash2, X } from 'lucide-react'
+import { Check, Cloud, FilePlus, FolderOpen, HardDrive, Loader2, Pencil, Plus, RotateCcw, Settings2, Square, Terminal, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ProviderSetupDialog, type ProviderStatus } from '@/components/ProviderSetupDialog'
 
 type Upload = {
   name: string
@@ -54,6 +55,10 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [pendingCurrentDelete, setPendingCurrentDelete] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null)
+  const [providerSetupOpen, setProviderSetupOpen] = useState(false)
+  const [providerSetupTab, setProviderSetupTab] = useState<'local' | 'cloud'>('local')
+  const [activeBuildProvider, setActiveBuildProvider] = useState<'local' | 'cloud' | null>(null)
   const sseRef = useRef<EventSource | null>(null)
   const logContainerRef = useRef<HTMLDivElement | null>(null)
   const wasRunningRef = useRef(false)
@@ -93,6 +98,15 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
 
   useEffect(() => { refresh() }, [refresh])
 
+  const refreshProviders = useCallback(async () => {
+    try {
+      const response = await fetch('/api/providers', { cache: 'no-store' })
+      if (response.ok) setProviderStatus(await response.json())
+    } catch {}
+  }, [])
+
+  useEffect(() => { void refreshProviders() }, [refreshProviders])
+
   // The index job is server-owned and survives this panel unmounting, so the
   // panel resynchronizes against /status: reattach to a running build, and
   // pick up the terminal outcome of a build that finished while closed.
@@ -102,9 +116,10 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
       try {
         const response = await fetch('/api/corpus/index/status', { cache: 'no-store' })
         if (!response.ok || cancelled) return
-        const job = await response.json() as { running?: boolean; status?: string; startedAt?: number | null; progress?: number }
+        const job = await response.json() as { running?: boolean; status?: string; startedAt?: number | null; progress?: number; buildProvider?: 'local' | 'cloud' | null }
         const isRunning = job.running === true
         setRunning(isRunning)
+        setActiveBuildProvider(job.buildProvider ?? null)
         if (typeof job.progress === 'number') setProgress(job.progress)
         if (isRunning) {
           setRunStatus('running')
@@ -256,8 +271,13 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
     if (response.ok) await refresh()
   }
 
-  const startIndex = () => {
+  const startIndex = (provider: 'local' | 'cloud') => {
     if (running) return
+    if (!providerStatus?.[provider].ready) {
+      setProviderSetupTab(provider)
+      setProviderSetupOpen(true)
+      return
+    }
     setPersistedLogs([])
     setLiveLogs([])
     setElapsed(0)
@@ -265,7 +285,8 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
     setStartTime(Date.now())
     setRunning(true)
     setRunStatus('running')
-    const source = new EventSource('/api/corpus/index/stream')
+    setActiveBuildProvider(provider)
+    const source = new EventSource(`/api/corpus/index/stream?provider=${provider}`)
     sseRef.current = source
     source.onmessage = event => {
       try {
@@ -439,7 +460,15 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
                 ) : (
                   <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" onClick={() => setPendingCurrentDelete(true)} title="Delete active project"><Trash2 className="h-3.5 w-3.5" /></Button>
                 )}
-                {running ? <Button variant="destructive" size="sm" className="h-8 rounded-none text-[10px]" onClick={stopIndex} disabled={stopping}>{stopping ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />} {stopping ? 'Stopping' : 'Stop'}</Button> : <Button size="sm" className="h-8 rounded-none text-[10px]" onClick={startIndex} disabled={!files.length}><Play className="h-3 w-3" /> Build graph</Button>}
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" onClick={() => setProviderSetupOpen(true)} title="Configure build providers"><Settings2 className="h-3.5 w-3.5" /></Button>
+                {running ? (
+                  <Button variant="destructive" size="sm" className="h-8 rounded-none text-[10px]" onClick={stopIndex} disabled={stopping}>{stopping ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />} {stopping ? 'Stopping' : `Stop ${activeBuildProvider || ''}`}</Button>
+                ) : (
+                  <>
+                    <Button variant="outline" size="sm" className="h-8 rounded-none text-[10px]" onClick={() => startIndex('local')} disabled={!files.length}><HardDrive className="h-3 w-3" /> Build local</Button>
+                    <Button size="sm" className="h-8 rounded-none text-[10px]" onClick={() => startIndex('cloud')} disabled={!files.length}><Cloud className="h-3 w-3" /> Build cloud</Button>
+                  </>
+                )}
               </div>
             </header>
 
@@ -464,6 +493,7 @@ export default function CorpusPanel({ onProjectNamed, onProjectDeleted }: { onPr
           <div ref={logContainerRef} className="min-h-0 flex-1 overflow-auto font-mono text-[9px] leading-4" data-hmi-scroll>{!terminalLines.length ? <div className="px-4 py-3 text-neutral-600">No process output.</div> : terminalLines.map((entry, index) => <div key={`${entry.ts}-${index}`} className={`grid min-w-0 grid-cols-[36px_18px_minmax(0,1fr)] border-b border-white/[0.04] px-2 py-0.5 ${entry.state === 'error' ? 'bg-red-500/[0.06] text-red-300' : entry.state === 'success' ? 'text-green-300' : 'text-neutral-300'}`}><span className="select-none pr-2 text-right tabular-nums text-neutral-600">{index + 1}</span><span className="flex items-start justify-center pt-0.5">{entry.state === 'active' ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : entry.state === 'success' ? <Check className="h-3 w-3 text-green-400" /> : entry.state === 'error' ? <X className="h-3 w-3 text-red-400" /> : null}</span><span className="min-w-0 whitespace-pre-wrap break-words">{entry.text.trim()}</span></div>)}</div>
         </section>
       )}
+      <ProviderSetupDialog open={providerSetupOpen} onOpenChange={setProviderSetupOpen} status={providerStatus} onStatusChange={setProviderStatus} initialTab={providerSetupTab} />
     </div>
   )
 }

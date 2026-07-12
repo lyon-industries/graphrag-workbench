@@ -12,6 +12,7 @@ export async function GET() {
     progress: job?.progress ?? 0,
     dataVersion: job?.dataVersion ?? 0,
     provider: job?.provider ?? null,
+    buildProvider: job?.buildProvider ?? null,
     completionModel: job?.completionModel ?? null,
     fatalError: job?.fatalError ?? null,
   })

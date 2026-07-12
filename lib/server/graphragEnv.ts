@@ -20,7 +20,7 @@ export function resolveGraphRagEnv(source: NodeJS.ProcessEnv = process.env): {
   let embeddingModel: string
 
   if (env.GRAPHRAG_COMPLETION_PROVIDER) {
-    provider = 'configured'
+    provider = env.GRAPHRAG_COMPLETION_PROVIDER === 'ollama' ? 'ollama' : env.GRAPHRAG_COMPLETION_PROVIDER === 'openai' ? 'openai' : 'configured'
     completionModel = env.GRAPHRAG_COMPLETION_MODEL || 'configured'
     embeddingModel = env.GRAPHRAG_EMBEDDING_MODEL || 'configured'
   } else {

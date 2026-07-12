@@ -99,7 +99,7 @@ vector_store:
   type: lancedb
   db_uri: output/lancedb
   # Must match the embedding model: text-embedding-3-small returns 1,536
-  # dimensions, nomic-embed-text returns 768. GraphRAG 3.1 otherwise defaults
+  # dimensions and qwen3-embedding:0.6b returns 1,024. GraphRAG 3.1 otherwise defaults
   # the Lance schema to 3,072 and folds two embeddings into each row. The
   # workbench resolves this per provider; override in .env if needed.
   vector_size: ${GRAPHRAG_EMBEDDING_VECTOR_SIZE}

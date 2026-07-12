@@ -4,6 +4,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { convertPdfToText, convertParquetSubset, convertGraphParquetToJson } from './converters'
 import { resolveGraphRagEnv } from './graphragEnv'
+import { resolveProviderEnv, type BuildProvider } from './providerConfig'
 
 export type IndexJobStatus = 'running' | 'succeeded' | 'failed' | 'stopped'
 
@@ -18,6 +19,7 @@ export type IndexJobEvent =
 export type IndexJob = {
   id: string
   method: 'standard' | 'fast'
+  buildProvider: BuildProvider
   child?: ChildProcess
   startedAt: number
   finishedAt?: number
@@ -129,13 +131,20 @@ const WORKFLOW_ARTIFACTS: Record<string, string[]> = {
   create_final_text_units: ['text_units.parquet'],
 }
 
-export function startIndexJob(method: 'standard' | 'fast'): { job?: IndexJob; error?: string } {
+export async function startIndexJob(method: 'standard' | 'fast', buildProvider: BuildProvider): Promise<{ job?: IndexJob; error?: string }> {
   if (isIndexRunning()) return { error: 'INDEX_ALREADY_RUNNING' }
 
-  const providerConfig = resolveGraphRagEnv()
+  let providerEnv: NodeJS.ProcessEnv
+  try {
+    providerEnv = await resolveProviderEnv(buildProvider)
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'PROVIDER_NOT_CONFIGURED' }
+  }
+  const providerConfig = resolveGraphRagEnv(providerEnv)
   const job: IndexJob = {
     id: crypto.randomUUID(),
     method,
+    buildProvider,
     startedAt: Date.now(),
     status: 'running',
     provider: providerConfig.provider,
