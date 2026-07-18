@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/1f588a45-07ca-4953-92ed-fc888fe28cff
 
 ## Version 2.0
 
-![GraphRAG Workbench 2.0 showing an Apollo 11 entity inspector beside the live knowledge graph](docs/screenshots/graphrag-workbench-2.0-inspector.png)
+![GraphRAG Workbench 2.0 showing an isolated lunar-surface community and entity inspector in a front-on MacBook render](docs/screenshots/graphrag-workbench-2.0-community-macbook.webp)
 
 *Inspect entity evidence, community hierarchy, and strongest relationships without leaving the live graph.*
 
@@ -28,9 +28,9 @@ https://github.com/user-attachments/assets/1f588a45-07ca-4953-92ed-fc888fe28cff
 - text-backed PDF validation and transactional file removal
 - no account, hosted database, or remote document service
 
-![GraphRAG Workbench 2.0 full-corpus Apollo 11 knowledge graph](docs/screenshots/graphrag-workbench-2.0-graph.png)
+![GraphRAG Workbench 2.0 with the Inspector and Projects workspace open in a 45-degree MacBook render](docs/screenshots/graphrag-workbench-2.0-projects-macbook.webp)
 
-*Navigate the complete corpus in one full-screen spatial workbench.*
+*Manage projects and monitor indexing while retaining the graph and selected-entity context.*
 
 Chat is intentionally absent from 2.0 while its next interaction model is designed.
 
