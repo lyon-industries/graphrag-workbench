@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/lyon-industries/.github/main/profile/lyon-industries-banner.svg" alt="Lyon Industries" width="100%">
+</p>
+
 # GraphRAG Workbench
 
 A local workbench for turning documents into an inspectable 3D knowledge graph.
